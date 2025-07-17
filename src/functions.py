@@ -1,11 +1,21 @@
-import streamlit as st
-import pandas as pd
 from pathlib import Path
-#import os
+
+import pandas as pd
+
 import plotly.express as px
 import plotly.graph_objects as go
 
+import streamlit as st
+
+
+
 def read_csv():
+    """
+        Lädt die  Autoscout24-Datendatei, entfernt Duplikate und NaNs.
+
+        Returns:
+            pd.DataFrame: Bereinigter Datensatz ohne Duplikate oder fehlende Werte.
+    """
     script_path = Path(__file__).resolve()
     src_dir = script_path.parent
     data_file_path = src_dir / "autoscout24.csv"
@@ -19,6 +29,12 @@ def read_csv():
 
 
 def image_path():
+    """
+        Liefert den Pfad zur 'cardealer.png' Bilddatei im aktuellen Projektverzeichnis.
+
+        Returns:
+            pathlib.Path: Pfad zur Bilddatei.
+    """
     script_path = Path(__file__).resolve()
     src_dir = script_path.parent
     image_file_path = src_dir / "cardealer.png"
@@ -28,6 +44,14 @@ def image_path():
 
 
 def read_csv_with_nan_duplicates():
+    """
+        Lädt die Autoscout24-Datendatei inklusive Duplikaten und fehlender Werte.
+
+        Returns:
+            pd.DataFrame: Rohdatensatz mit NaN und Duplikaten.
+    """
+
+
     script_path = Path(__file__).resolve()
     src_dir = script_path.parent  # == src/
     data_file_path = src_dir / "autoscout24.csv"
@@ -36,6 +60,16 @@ def read_csv_with_nan_duplicates():
     return df_with_nan
 
 def show_nan(null_counts):
+    """
+        Erstellt eine Balkengrafik zur Visualisierung von NaN-Werten je Feature.
+
+        Args:
+            null_counts (pd.Series): Anzahl fehlender Werte pro Spalte.
+
+        Returns:
+            plotly.graph_objects.Figure: Balkendiagramm mit NaN-Verteilung.
+    """
+
     fig = px.bar(null_counts,color_discrete_sequence=['#ff9249'])
     fig.update_xaxes(title_text="")
     fig.update_yaxes(title_text="Anzahl NaN")
@@ -49,6 +83,17 @@ def show_nan(null_counts):
 
 
 def get_outliers(df_merged, df_filtered_iqr):
+    """
+        Berechnet pro Baujahr die Anzahl der entfernten Ausreißer.
+
+        Args:
+            df_merged (pd.DataFrame): Datensatz mit IQR-Grenzen.
+            df_filtered_iqr (pd.DataFrame): Datensatz nach Entfernung der Ausreißer.
+
+        Returns:
+            pd.DataFrame: Übersicht der Ausreißeranzahl pro Jahr.
+    """
+
     outliers = df_merged.groupby("year").size() - df_filtered_iqr.groupby("year").size()
     outliers_df = outliers.reset_index()
     outliers_df.columns = ["year", "outliers"]
@@ -61,6 +106,19 @@ def get_outliers(df_merged, df_filtered_iqr):
 
 
 def df_outliers_removed(df,factor=1.5):
+    """
+        Entfernt Ausreißer anhand eines IQR-Faktors für 'price' und 'mileage' je Baujahr.
+
+        Args:
+            df (pd.DataFrame): Ursprungsdatensatz mit Fahrzeugdaten.
+            factor (float): Multiplikator für die IQR-Grenzen (Default: 1.5).
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+                - df_merged: Datensatz inkl. IQR-Grenzen
+                - df_filtered_iqr: Datensatz ohne Ausreißer
+                - iqr_bounds: Grenzwerte für Preis und Laufleistung je Baujahr
+    """
     iqr_bounds = df.groupby("year").agg(
         # Aggregationen für 'price'
         price_q1=('price', lambda x: x.quantile(0.25)),
@@ -82,6 +140,17 @@ def df_outliers_removed(df,factor=1.5):
 
 
 def plot_outliers(outliers_df,iqr_bounds):
+    """
+        Visualisiert Ausreißer pro Baujahr sowie IQR-basierte Preis- und Laufleistungsgrenzen.
+
+        Args:
+            outliers_df (pd.DataFrame): Anzahl der Ausreißer je Jahr.
+            iqr_bounds (pd.DataFrame): IQR-Grenzen für Preis und Mileage.
+
+        Returns:
+            plotly.graph_objects.Figure: Kombinierte Balken- und Liniendiagramme.
+    """
+
     vivid_colors = px.colors.qualitative.Vivid[:3]
     fig = go.Figure()
     fig.add_trace(go.Bar(x=outliers_df["year"], y=outliers_df["outliers"], name="Anzahl Ausreißer",marker_color=vivid_colors[0]))
@@ -162,6 +231,17 @@ def plot_sales(df_sales):
 """
 
 def plot_make_pie(df,cat,years):
+    """
+        Erstellt für jedes Jahr ein Kreisdiagramm der Verkaufsanteile je Kategorie (z.B. Marke).
+
+        Args:
+            df (pd.DataFrame): Datensatz mit Verkaufsinformationen.
+            cat (str): Kategorie zum Gruppieren (z. B. 'make').
+            years (List[int]): Liste der Jahrgänge zur Analyse.
+
+        Returns:
+            None: Diagramme werden über Streamlit direkt angezeigt.
+    """
     cols = st.columns(len(years))
     for i,year in enumerate(years):
         sales = df[df["year"].isin([year])].groupby([cat, "year"]).size().reset_index(name="count")
@@ -190,6 +270,18 @@ def plot_make_pie(df,cat,years):
 
 
 def plot_make_pie_sales_volume(df,cat,years):
+    """
+        Visualisiert für jedes Jahr den Umsatzanteil je Kategorie (z.B Marke) als Kreisdiagramm.
+
+        Args:
+            df (pd.DataFrame): Datensatz mit Preisinformationen.
+            cat (str): Kategorie zum Gruppieren (z. B. 'make').
+            years (List[int]): Liste der Jahrgänge zur Analyse.
+
+        Returns:
+            None: Umsatzdiagramme werden über Streamlit direkt angezeigt.
+    """
+
     cols = st.columns(len(years))
     for i,year in enumerate(years):
         sales_filter = df[df["year"].isin([year])].groupby([cat, "year"])["price"].sum().reset_index(
@@ -257,6 +349,18 @@ def plot_offer_cat(df_offer_cat,cat,options):
 """
 
 def top_10_sales(df,fuel,gear,year):
+    """
+        Berechnet die Top-10 meistverkauften Fahrzeugmarken je Kraftstofftyp und Getriebe (optional nach Jahr).
+
+        Args:
+            df (pd.DataFrame): Gesamtfahrzeug-Datensatz.
+            fuel (list): Ausgewählte Kraftstofftypen.
+            gear (list): Ausgewählte Getriebearten.
+            year (list): Liste von Jahrgängen (z. B. ['2015', '2016'] oder ['alle']).
+
+        Returns:
+            pd.DataFrame: Top 10 Verkäufe je Gruppe (Make, Fuel, Gear[, Year]) mit Verkaufsanzahl.
+    """
     df["year"] = df["year"].astype(str)
     if year[0]=="alle":
         df_filtered = df[(df["fuel"].isin(fuel)) & (df["gear"].isin(gear))]
@@ -290,6 +394,17 @@ def top_10_sales(df,fuel,gear,year):
     return top10
 
 def plot_top_10(top10,year):
+    """
+        Visualisiert die Top-10 meistverkauften Marken als gruppierte Balkendiagramme,
+        facettiert nach Kraftstoff und Getriebe. Optional pro Jahr oder übergreifend.
+
+        Args:
+            top10 (pd.DataFrame): Tabelle mit Top-Verkäufen.
+            year (list): Liste mit Jahrgangsfilter (z. B. ['2015'] oder ['alle']).
+
+        Returns:
+            plotly.graph_objects.Figure: Interaktive Balkengrafik.
+    """
 
     if year[0]!="alle":
         fig=px.bar(top10,x="year",y="count",color="make",
@@ -334,6 +449,19 @@ def plot_top_10(top10,year):
 
 
 def plot_rel_price_box(data_frame,color_value,mileage=False,price_mileage=False):
+    """
+        Visualisiert Preise oder Laufleistungen als Boxplot oder Preis-Mileage-Korrelation als Streudiagramm.
+
+        Args:
+            data_frame (pd.DataFrame): Datensatz mit Fahrzeugangeboten.
+            color_value (str): Spalte für Farbgruppen (z. B. 'make').
+            mileage (bool): Wenn True → Boxplot für Mileage.
+            price_mileage (bool): Wenn True → Scatterplot für Preis vs. Mileage.
+            (Standard): Boxplot für Preis nach Jahr.
+
+        Returns:
+            plotly.graph_objects.Figure: Interaktive Visualisierung.
+    """
     if mileage:
         fig = px.box(data_frame=data_frame, x="year", y="mileage", color=color_value, facet_col="fuel",facet_row="gear",color_discrete_sequence=px.colors.qualitative.Vivid,
                      facet_col_spacing=0.2, width=100, height=600)

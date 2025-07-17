@@ -1,17 +1,12 @@
 import joblib
 import io
 
-import streamlit as st
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
-
-
-
 from sklearn.utils import estimator_html_repr
+
+import streamlit as st
 import streamlit.components.v1 as components
-
-
-
 
 from ml_functions import*
 

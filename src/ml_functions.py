@@ -1,28 +1,43 @@
-import pandas as pd
-import numpy as np
+
+#import os
 from pathlib import Path
-import os
+
+
+import numpy as np
+import pandas as pd
+
+
 import plotly.express as px
 import plotly.graph_objects as go
-from scipy.stats import probplot
-from scipy.stats import skew, kurtosis
-
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import StandardScaler
-from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA
-from sklearn.pipeline import Pipeline
 
 
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from xgboost import XGBRegressor
+from scipy.stats import kurtosis, probplot, skew
 
 
 from sklearn import metrics
+from sklearn.compose import ColumnTransformer
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
+
+from xgboost import XGBRegressor
+
 
 
 def read_preprocess_df(factor = 1.5):
+    """
+        Lädt und bereinigt die Autoscout24-Daten, entfernt Ausreißer via IQR,
+        kategorisiert relevante Spalten und bereitet das finale Modell-DataFrame vor.
+
+        Args:
+            factor (float): Faktor zur Bestimmung der IQR-Grenzen (Default: 1.5).
+
+        Returns:
+            pd.DataFrame: Vorverarbeiteter und ausreißerbereinigter Datensatz.
+    """
     script_path = Path(__file__).resolve()
     src_dir = script_path.parent
     data_file_path = src_dir / "autoscout24.csv"
@@ -62,6 +77,16 @@ def read_preprocess_df(factor = 1.5):
     return df_2
 
 def cat_num_cols(df_2,features):
+    """
+        Trennt Features in kategoriale und numerische Spalten basierend auf Datentyp.
+
+        Args:
+            df_2 (pd.DataFrame): Feature-DataFrame.
+            features (list): Liste aller Feature-Namen.
+
+        Returns:
+            tuple: (List kategorischer Features, List numerischer Features)
+    """
     categorical_cols = [feature for feature in features if df_2[feature].dtype == "category"]
     numerical_cols = [feature for feature in features if feature not in categorical_cols]
     return categorical_cols,numerical_cols
@@ -69,6 +94,17 @@ def cat_num_cols(df_2,features):
 
 
 def feature_df(df_2,features,categorical_cols):
+    """
+        Wandelt kategoriale Variablen per One-Hot-Encoding in numerische Dummy-Features um.
+
+        Args:
+            df_2 (pd.DataFrame): Ursprünglicher Feature-DataFrame.
+            features (list): Liste zu verwendender Spalten.
+            categorical_cols (list): Liste der kategorialen Feature-Namen.
+
+        Returns:
+            pd.DataFrame: Modellfähiger Feature-Vektor.
+    """
     df_features = df_2[features].copy()
     df_features = pd.get_dummies(df_features, columns=categorical_cols, drop_first=True)
     return df_features
@@ -76,6 +112,18 @@ def feature_df(df_2,features,categorical_cols):
 
 
 def model_and_scaler(model_selection,scaler_selection):
+    """
+        Gibt Modellobjekt und zugehörigen Skalierer zurück basierend auf Auswahl.
+
+        Args:
+            model_selection (str): Kürzel für Modelltyp ('lr', 'rf', 'xgb').
+            scaler_selection (str): Skalierungsmethode ('Standard', 'MinMax', 'None').
+
+        Returns:
+            tuple: (Modellobjekt, Skalierungsobjekt oder 'passthrough')
+    """
+
+
     model_dict={'lr':LinearRegression(),
                  'rf':RandomForestRegressor(n_estimators=300,max_depth=None,min_samples_split=2,max_features='log2',random_state=42),
                 'xgb':XGBRegressor(random_state=42, n_jobs=-1,colsample_bytree= 0.8, learning_rate= 0.1, max_depth=7, n_estimators= 300, subsample= 1.0)}
@@ -89,6 +137,20 @@ def model_and_scaler(model_selection,scaler_selection):
     return model,scaler
 
 def pca_explained_variance(X_train,model_selection,scaler_selection,categorical_dummy_cols,num_cols):
+    """
+        Berechnet kumulierte erklärte Varianz aller Hauptkomponenten (PCA).
+
+        Args:
+            X_train (pd.DataFrame): Trainingsdaten.
+            model_selection (str): Modelltyp zur Skalerauswahl.
+            scaler_selection (str): Skalierungsmethode.
+            categorical_dummy_cols (list): One-Hot-kodierte Features.
+            num_cols (list): Numerische Feature-Namen.
+
+        Returns:
+            np.ndarray: Array kumulierter Varianz je Hauptkomponente.
+    """
+
     _,scaler=model_and_scaler(model_selection,scaler_selection)
 
     preprocessor_for_pca = ColumnTransformer(
@@ -104,6 +166,15 @@ def pca_explained_variance(X_train,model_selection,scaler_selection,categorical_
 
 
 def plot_explained_var(explained_var):
+    """
+        Erstellt ein Liniendiagramm zur Visualisierung kumulierter erklärter Varianz.
+
+        Args:
+            explained_var (np.ndarray): Varianzanteile der Hauptkomponenten.
+
+        Returns:
+            plotly.graph_objects.Figure: Interaktive Plotly-Figur.
+    """
     vivid_colors = px.colors.qualitative.Vivid
     first_vivid_color = vivid_colors[0]
     df_var = pd.DataFrame({
@@ -151,6 +222,19 @@ def plot_explained_var(explained_var):
 
 
 def ml_pipe(preprocessor,pca_check,n_components,model_selection,model):
+    """
+        Baut eine ML-Pipeline mit Preprocessing, optional PCA und gewähltem Modell.
+
+        Args:
+            preprocessor (ColumnTransformer): Feature-Transformation.
+            pca_check (bool): Ob PCA integriert werden soll.
+            n_components (int): Anzahl PCA-Komponenten.
+            model_selection (str): Modellkürzel.
+            model: Modellobjekt.
+
+        Returns:
+            Pipeline: Sklearn-Pipeline für Training und Vorhersage.
+    """
     pipeline_steps = [('preprocessor', preprocessor)]
     if pca_check:
         pipeline_steps.append(('pca', PCA(n_components=n_components)))
@@ -160,6 +244,16 @@ def ml_pipe(preprocessor,pca_check,n_components,model_selection,model):
 
 
 def performance(y_test,y_pred):
+    """
+        Berechnet klassische Regressionsmetriken.
+
+        Args:
+            y_test (pd.Series): Wahre Zielwerte.
+            y_pred (np.ndarray): Modellvorhersagen.
+
+        Returns:
+            tuple: (RMSE, R²-Score, MAE)
+    """
     rmse = metrics.root_mean_squared_error(y_test, y_pred)
     r_2 = metrics.r2_score(y_test, y_pred)
     mae = metrics.mean_absolute_error(y_test, y_pred)
@@ -167,6 +261,13 @@ def performance(y_test,y_pred):
 
 
 def plot_pred_vs_true(y_test,y_pred):
+    """
+        Visualisiert ein Scatterplot mit Vorhersage vs. Ist-Wert und Referenzlinie y = x.
+
+        Returns:
+            plotly.graph_objects.Figure: Vergleichsdiagramm.
+    """
+
     fig = go.Figure()
     plot_color = px.colors.qualitative.Vivid[0]
     fig.add_trace(go.Scatter(
@@ -191,15 +292,23 @@ def plot_pred_vs_true(y_test,y_pred):
         name='Perfekte Vorhersage (Y=X)'
     ))
 
-    fig.update_layout(height=555)
-        #legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.2),
-        #margin=dict(t=60, b=60, l=60, r=30))
-
+    fig.update_layout(
+        xaxis_title="Wahrer Preis",
+        yaxis_title="Vorhergesagter Preis",
+        height=555,
+        hovermode="closest"
+    )
 
     return fig
 
 
 def qq_plot(y_test,y_pred):
+    """
+        Erstellt ein QQ-Plot zur Normalitätsprüfung der Residuen.
+
+        Returns:
+            plotly.graph_objects.Figure: QQ-Diagramm.
+    """
     plot_color = px.colors.qualitative.Vivid[0]
     residuals=y_test-y_pred
     residuals_standard = (residuals - residuals.mean()) / residuals.std()
@@ -240,6 +349,13 @@ def qq_plot(y_test,y_pred):
 
 
 def error_price_segments(y_test,y_pred):
+    """
+        Visualisiert durchschnittliche Fehler und Residuen segmentiert nach Preisbereich.
+
+        Returns:
+            plotly.graph_objects.Figure: Balkendiagramm mit Residuenanalyse.
+    """
+
     df_error = pd.DataFrame({
         "Istpreis": y_test,
         "Vorhersage": y_pred,
@@ -295,6 +411,12 @@ def error_price_segments(y_test,y_pred):
 
 
 def check_residuals(y_test,y_pred):
+    """
+        Berechnet Schiefe und Kurtosis der Residuen sowie deren Abweichung zur Normalform.
+
+        Returns:
+            tuple: (Skew, Kurtosis, ΔSkew zu 0, ΔKurtosis zu 3)
+    """
     residuals = y_test - y_pred
     res_skew = skew(residuals)
     res_kurt = kurtosis(residuals, fisher=False)
@@ -310,6 +432,17 @@ def check_residuals(y_test,y_pred):
 
 
 def feature_importance(pipe, model_selection):
+    """
+        Gibt sortierte Feature-Importances basierend auf dem Modell zurück.
+        Unterstützt sowohl Regressionskoeffizienten als auch Feature-Importances.
+
+        Args:
+            pipe (Pipeline): Trainierte Sklearn-Pipeline.
+            model_selection (str): Modellkürzel ('lr', 'rf', 'xgb').
+
+        Returns:
+            pd.DataFrame: Feature-Importances mit Namen und Gewichtung.
+    """
     model = pipe.named_steps[model_selection]
 
     if "pca" in pipe.named_steps:
@@ -337,6 +470,24 @@ def feature_importance(pipe, model_selection):
 
 
 def car_data(categorical_dummy_cols,X_train,hp=None,year=None,mileage=None,make=None,fuel=None,gear=None,model=None):
+    """
+        Erzeugt einen Feature-Vektor für ein einzelnes Fahrzeug basierend auf Benutzerangaben,
+        passend zur Struktur des Trainingsdatensatzes (Dummy-kodierte Kategorien und numerische Merkmale).
+
+        Args:
+            categorical_dummy_cols (list): Liste aller Dummy-Features (One-Hot-kodierte Spaltennamen).
+            X_train (pd.DataFrame): Trainingsdaten, um die Spaltenstruktur zu übernehmen.
+            hp (float, optional): Motorleistung in PS.
+            year (int, optional): Erstzulassungsjahr.
+            mileage (float, optional): Kilometerstand.
+            make (str, optional): Fahrzeugmarke.
+            fuel (str, optional): Kraftstofftyp.
+            gear (str, optional): Getriebeart.
+            model (str, optional): Modellbezeichnung.
+
+        Returns:
+            pd.DataFrame: 1-zeiliger Feature-Vektor für Modellinput.
+    """
 
     new_car_data = {}
     for col in categorical_dummy_cols:
