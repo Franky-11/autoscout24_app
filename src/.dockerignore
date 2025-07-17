@@ -36,7 +36,7 @@ dist/
 .git/
 .gitignore
 
-# Persönliche Konfigs & Geheimnisse (falls vorhanden)
+# Persönliche Konfigs
 .env
 *.env
 secrets.yaml
