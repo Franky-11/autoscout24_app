@@ -1,0 +1,43 @@
+# Python-Umgebungen & Caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+
+# Jupyter-Artefakte
+.ipynb_checkpoints/
+*.ipynb
+
+# OS-Spezifisches
+.DS_Store
+Thumbs.db
+
+# Editor-Konfigurationen
+.vscode/
+.idea/
+
+# Build-Artefakte
+build/
+dist/
+*.egg-info/
+
+# Paketlisten, Logs, temporäres
+*.log
+*.tmp
+
+# Git & Versionskontrolle
+.git/
+.gitignore
+
+# Persönliche Konfigs & Geheimnisse (falls vorhanden)
+.env
+*.env
+secrets.yaml
+config.yml

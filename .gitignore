@@ -39,10 +39,10 @@ config.yml
 secrets.yml
 
 
-.dockerignore
 
 
-*.csv
+
+
 *.sav
 *.joblib
 *.pkl
