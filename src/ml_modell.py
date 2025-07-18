@@ -51,9 +51,6 @@ if 'pipeline_store' not in st.session_state:
     st.session_state.pipeline_store = {}
 
 
-df_2=read_preprocess_df()
-
-
 
 st.title(":material/model_training: Machine Learning zur Preisvorhersage")
 
@@ -61,19 +58,34 @@ st.divider()
 
 st.subheader("🛠️ Feature Auswahl")
 st.write("")
+
+df_2=read_preprocess_df()
+
+df,engineered_features=feature_engineering(df_2)
+
 options=[feature for feature in df_2.columns.tolist() if feature!="price" ]
+options_engineered=engineered_features
 
 cols=st.columns(4)
 with cols[0]:
     features=st.multiselect("Features",options=options,default=['hp','fuel','gear','make','mileage','year'])
 
+with cols[1]:
+    engineered_features=st.multiselect("Engineered Features",options=options_engineered)
 
-cat_cols,num_cols=cat_num_cols(df_2,features)
-df_features=feature_df(df_2,features,cat_cols)
+features=features+engineered_features
+
+cat_cols,num_cols=cat_num_cols(df,features)
+
+df_features=feature_df(df,features,cat_cols)
+
+
+
 
 categorical_dummy_cols = [col for col in df_features.columns if col not in num_cols]
 X = df_features.copy()
-y = df_2['price']
+y = df['price']
+
 
 
 with cols[2]:
@@ -88,7 +100,7 @@ with cols[3]:
 with cols[0]:
     st.write("")
     st.metric("Anzahl Features (nach One-Hot-Encoding)",value=df_features.shape[1],border=False)
-
+    #st.write(df_features.isna().sum())
 
 #---------------------------------------------------------------------------------------#
 
@@ -218,7 +230,7 @@ with cols[1]:
 
 
 if st.session_state.model_training:
-    with st.container(border=True,height=900):
+    with st.container(border=True,height=1000):
         cols=st.columns([3,0.5,1,0.5])
         with cols[0]:
             st.markdown(f"**Modell Performance {model_dict[model_selection]} auf dem Validierungsset**")
@@ -338,36 +350,38 @@ if st.session_state.model_training:
     gear=None
     model=None
 
+    required_widgets=input_features(features)
+
     st.subheader("")
 
     with st.container(border=True,height=600):
         cols = st.columns(3)
 
         with cols[0]:
-          if 'hp' in features:
-             hp=st.slider("PS",min_value=int(df_2['hp'].min()),max_value=int(df_2['hp'].max()),value=135,step=5)
-          if 'year' in features:
+          if 'hp' in required_widgets:
+             hp=st.slider("PS",min_value=int(df['hp'].min()),max_value=int(df['hp'].max()),value=135,step=5)
+          if 'year' in required_widgets:
               year=st.number_input("Erstzulassung",2011,2021,2015,step=1)
-          if 'mileage' in features:
-              mileage=st.slider("Kilometerstand",min_value=0,max_value=df_2['mileage'].max(),value=15000,step=1000)
+          if 'mileage' in required_widgets:
+              mileage=st.slider("Kilometerstand",min_value=0,max_value=df['mileage'].max(),value=15000,step=1000)
 
         with cols[1]:
-           if 'make' in features:
-               make = st.selectbox("Marke", sorted(df_2['make'].unique()), index=5)
-           if 'model' in features:
+           if 'make' in required_widgets:
+               make = st.selectbox("Marke", sorted(df['make'].unique()), index=5)
+           if 'model' in required_widgets:
                model_options = sorted(
-                    df_2[df_2['make'] == make]['model'].unique()) if 'make' in features else sorted(
-                    df_2['model'].unique())
+                    df[df['make'] == make]['model'].unique()) if 'make' in features else sorted(
+                    df['model'].unique())
                model = st.selectbox("Modell", model_options, index=0)
 
 
 
 
         with cols[2]:
-          if 'fuel' in features:
-              fuel=st.segmented_control("Kraftstoff",options=sorted(df_2['fuel'].unique()),default='Gasoline')
-          if 'gear' in features:
-              gear=st.segmented_control("Getriebe",options=sorted(df_2['gear'].unique()),default='Manual')
+          if 'fuel' in required_widgets:
+              fuel=st.segmented_control("Kraftstoff",options=sorted(df['fuel'].unique()),default='Gasoline')
+          if 'gear' in required_widgets:
+              gear=st.segmented_control("Getriebe",options=sorted(df['gear'].unique()),default='Manual')
 
 
         new_car_df=car_data(categorical_dummy_cols,X_train,hp=hp ,year=year ,mileage=mileage ,make=make ,fuel=fuel ,gear=gear ,model=model)

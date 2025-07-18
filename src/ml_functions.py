@@ -68,46 +68,83 @@ def read_preprocess_df(factor = 1.5):
     df_2['gear'] = df_2['gear'].astype('category')
     df_2['model'] = df_2['model'].astype('category')
 
-    # Weitere Features erzeugen
-   # df_2['mileage_square'] = df_2['mileage'] ** 2
-   # df_2['year_square'] = df_2['year'] ** 2
-   # df_2['ln_mileage'] = np.log(df_2['mileage'] + 1)
-   # df_2['ln_year'] = np.log(df_2['year'])
-
     return df_2
 
-def cat_num_cols(df_2,features):
+
+def feature_engineering(df_2):
+    """
+    Erzeugt neue Features für die Preisvorhersage ohne Data Leakage.
+
+    Args:
+        df_2 (pd.DataFrame): Ursprünglicher Fahrzeugdatensatz bereinigt.
+
+    Returns:
+        pd.DataFrame: Erweiterter Datensatz mit neuen Features und engineered_feature Liste
+    """
+    df = df_2.copy()
+
+    engineered_features = ["car_age", "mileage_per_year", "log_mileage", "log_hp", "make_model", "fuel_gear_combo"]
+
+    # Fahrzeugalter
+    current_year = 2021   # Anahme das der Datensatz aus 2021 stammt, 2021 erst offerType Neuwagen ist
+    df["car_age"] = current_year - df["year"]
+
+    # Nutzung pro Jahr
+    df["mileage_per_year"] = df["mileage"] / df["car_age"].replace(0, 1)
+
+    # Log-Transformationen
+    df["log_mileage"] = np.log(df["mileage"] + 1)
+    df["log_hp"] = np.log(df["hp"] + 1)
+
+    # Kombinierte Features
+    df["make_model"] = df["make"].astype(str) + "_" + df["model"].astype(str)
+    df["fuel_gear_combo"] = df["fuel"].astype(str) + "_" + df["gear"].astype(str)
+
+    # Kategorisieren
+    df["make_model"] = df["make_model"].astype("category")
+    df["fuel_gear_combo"] = df["fuel_gear_combo"].astype("category")
+
+   # df_engineered_features=df[["car_age","mileage_per_year","log_mileage","log_hp","make_model","fuel_gear_combo"]]
+
+    return df,engineered_features
+
+
+
+def cat_num_cols(df,features):
     """
         Trennt Features in kategoriale und numerische Spalten basierend auf Datentyp.
 
         Args:
-            df_2 (pd.DataFrame): Feature-DataFrame.
+            df (pd.DataFrame): Feature-DataFrame.
             features (list): Liste aller Feature-Namen.
 
         Returns:
             tuple: (List kategorischer Features, List numerischer Features)
     """
-    categorical_cols = [feature for feature in features if df_2[feature].dtype == "category"]
+    categorical_cols = [feature for feature in features if df[feature].dtype == "category"]
     numerical_cols = [feature for feature in features if feature not in categorical_cols]
     return categorical_cols,numerical_cols
 
 
 
-def feature_df(df_2,features,categorical_cols):
+def feature_df(df,features,categorical_cols):
     """
         Wandelt kategoriale Variablen per One-Hot-Encoding in numerische Dummy-Features um.
 
         Args:
-            df_2 (pd.DataFrame): Ursprünglicher Feature-DataFrame.
+            df (pd.DataFrame): Ursprünglicher Feature-DataFrame.
             features (list): Liste zu verwendender Spalten.
             categorical_cols (list): Liste der kategorialen Feature-Namen.
 
         Returns:
             pd.DataFrame: Modellfähiger Feature-Vektor.
     """
-    df_features = df_2[features].copy()
+    df_features = df[features].copy()
     df_features = pd.get_dummies(df_features, columns=categorical_cols, drop_first=True)
     return df_features
+
+
+
 
 
 
@@ -467,6 +504,33 @@ def feature_importance(pipe, model_selection):
 
 
 
+def input_features(features):
+    """
+        Gibt die für die Vorhersage benötigten Feature-Widgets zurück, die für die Vorhersage benötigt werden.
+
+        :param features: Alle features die für das Modell genutzt wurden
+        :return: features die für das setzen der Widgets genutzt werden
+    """
+    required_inputs = {
+        "car_age": ["year"],
+        "mileage_per_year": ["mileage", "year"],
+        "log_mileage": ["mileage"],
+        "log_hp": ["hp"],
+        "make_model": ["make", "model"],
+        "fuel_gear_combo": ["fuel", "gear"]
+    }
+
+    input_features = set()
+
+    for feature in features:
+        if feature in required_inputs:
+            input_features.update(required_inputs[feature])
+        else:
+            input_features.add(feature)
+
+    return input_features
+
+
 
 
 def car_data(categorical_dummy_cols,X_train,hp=None,year=None,mileage=None,make=None,fuel=None,gear=None,model=None):
@@ -489,36 +553,46 @@ def car_data(categorical_dummy_cols,X_train,hp=None,year=None,mileage=None,make=
             pd.DataFrame: 1-zeiliger Feature-Vektor für Modellinput.
     """
 
+    car_age = 2021 - year if year is not None else None
+    mileage_per_year = mileage / max(car_age, 1) if mileage is not None and car_age is not None else None
+    log_mileage = np.log(mileage + 1) if mileage is not None else None
+    log_hp = np.log(hp + 1) if hp is not None else None
+
+    make_model = f"{make}_{model}" if make and model else None
+    fuel_gear_combo = f"{fuel}_{gear}" if fuel and gear else None
+
     new_car_data = {}
+
+    for feature_name, value in {
+        "hp": hp,
+        "year": year,
+        "mileage": mileage,
+        "car_age": car_age,
+        "mileage_per_year": mileage_per_year,
+        "log_mileage": log_mileage,
+        "log_hp": log_hp
+    }.items():
+        if feature_name in X_train.columns:
+            new_car_data[feature_name] = value
+
     for col in categorical_dummy_cols:
         new_car_data[col] = 0
 
-    if make is not None:
-        make='make'+'_'+make
-        new_car_data[make] = 1
-
-    if fuel is not None:
-        fuel='fuel'+'_'+fuel
-        new_car_data[fuel] = 1
-
-    if gear is not None:
-        gear='gear'+'_'+gear
-        new_car_data[gear] = 1
-
-    if model is not None:
-        model='model'+'_'+model
-        new_car_data[model] = 1
-
-    if hp is not None:
-        new_car_data['hp'] = hp
-
-    if year is not None:
-        new_car_data['year'] = year
-    if mileage is not None:
-        new_car_data['mileage'] = mileage
-
+    # One-Hot-Encoding setzen, nur wenn Spalte existiert
+    for prefix, value in {
+        "make": make,
+        "fuel": fuel,
+        "gear": gear,
+        "model": model,
+        "make_model": make_model,
+        "fuel_gear_combo": fuel_gear_combo
+    }.items():
+        dummy_col = f"{prefix}_{value}"
+        if dummy_col in categorical_dummy_cols:
+            new_car_data[dummy_col] = 1
 
     new_car_df = pd.DataFrame([new_car_data])
     new_car_df = new_car_df[X_train.columns]
 
     return new_car_df
+
