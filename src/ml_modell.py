@@ -76,16 +76,11 @@ with cols[1]:
 features=features+engineered_features
 
 cat_cols,num_cols=cat_num_cols(df,features)
-
 df_features=feature_df(df,features,cat_cols)
-
-
-
 
 categorical_dummy_cols = [col for col in df_features.columns if col not in num_cols]
 X = df_features.copy()
 y = df['price']
-
 
 
 with cols[2]:
@@ -100,7 +95,7 @@ with cols[3]:
 with cols[0]:
     st.write("")
     st.metric("Anzahl Features (nach One-Hot-Encoding)",value=df_features.shape[1],border=False)
-    #st.write(df_features.isna().sum())
+#   st.write(df_features.isna().sum())
 
 #---------------------------------------------------------------------------------------#
 
@@ -115,15 +110,22 @@ with cols[0]:
         format_func=lambda x: {'lr': 'Linear Regression', 'rf': 'Random Forest', 'xgb': 'XGBoost'}[x])
 
 with cols[0]:
-    st.write("")
-    scaler_selection = st.segmented_control( 'Wähle einen Skalierer für numerische Features:',options=['None', 'Standard', 'MinMax'],default='Standard')
+    if model_selection=="lr":
+        scaler_selection = st.segmented_control( 'Wähle einen Skalierer für numerische Features:',options=['None', 'Standard', 'MinMax'],default='Standard')
+    else:
+        scaler_selection='None'
+        st.info("Skalierung nicht erforderlich")
+
     st.write("")
     test_size = st.slider("Anteil Validierungsset", min_value=10, max_value=50, value=20, step=5) / 100
 
 
 with cols[2]:
     n_components = 10
-    pca_check = st.checkbox('PCA aktivieren?', value=False)
+    if model_selection == "lr":
+        pca_check = st.checkbox('PCA aktivieren?', value=False)
+    else:
+        pca_check = False
 
 
 model_dict={'lr':'Linear Regression','rf':'Random Forest','xgb':'XGBoost'}
