@@ -56,6 +56,15 @@ Die Anwendung ist dann erreichbar unter:  http://localhost:8501
 
 ---
 
+🌐 Live-App  
+
+👉 App ist online unter:
+
+https://carscout24-app.streamlit.app
+
+
+---
+
 ##  Projektstruktur
 
 ```bash
