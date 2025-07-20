@@ -46,8 +46,8 @@ streamlit run home.py
 ##  Docker-Ausführung
 
 ```bash
-# Aus dem src-Ordner bauen
-docker build -t autoscout-app -f src/Dockerfile .
+# Docker-Image bauen, Dockerfile liegt in src/
+docker build -f src/Dockerfile -t autoscout-app .
 
 # Container starten
 docker run --name autoscout-container -p 8501:8501 autoscout-app
@@ -61,12 +61,12 @@ Die Anwendung ist dann erreichbar unter:  http://localhost:8501
 ```bash
 autoscout24/             ← Projekt-Root 
 ├── .gitignore           ← Git-Ausschlussregeln
+├── requirements.txt     ← Python-Abhängigkeiten
 ├── README.md            ← Dokumentation
 └── src/                 ← Docker-Build-Kontext & App-Logik
     ├── home.py          ← Entry point Streamlit-App
     ├── autoscout24.csv  ← Datendatei
     ├── Dockerfile       ← Container-Definition
-    ├── requirements.txt ← Python-Abhängigkeiten
     ├── .dockerignore    ← Docker-Ausschlussregeln (nur für Build aus src/)
     └── ...              ← Weitere .py Dateien (dashboard.py,ml_modell.py etc...)
 ```
