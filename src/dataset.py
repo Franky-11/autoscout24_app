@@ -25,12 +25,11 @@ st.plotly_chart(fig,use_container_width=True)
 
 st.divider()
 st.markdown(
-    "**Entfernen von Ausreißern (Preis,Mileage) mittels IQR**")
+    "**Entfernen von Ausreißern (Preis,Mileage,HP) mittels IQR**")
 cols=st.columns([1,0.5,2])
 with cols[0]:
     st.markdown("""
-    * Gruppieren nach Jahr  
-    * Berechnen von Q1 und Q3 sowie IQR für Preis und Mileage  
+    * Berechnen von Q1 und Q3 sowie IQR
     * Festlegen oberes Limit: Q3 + 1.5 × IQR  
     * Filtern der Daten nach oberem Limit
     """)

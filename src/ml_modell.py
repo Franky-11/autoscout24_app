@@ -97,7 +97,7 @@ with cols[0]:
 st.divider()
 st.subheader("⚙️ Modell Auswahl und Preprocessing")
 st.write("")
-cols=st.columns([1,0.5,2.5,0.5,2])
+cols=st.columns([1.5,0.5,2.5,0.5,2])
 with cols[0]:
     model_selection = st.selectbox(
         'Wähle ein Regressionsmodell:',
@@ -107,9 +107,15 @@ with cols[0]:
 with cols[0]:
     if model_selection=="lr":
         scaler_selection = st.segmented_control( 'Wähle einen Skalierer für numerische Features:',options=['None', 'Standard', 'MinMax'],default='Standard')
-    else:
+        st.badge("One-Hot-Encoding wird verwendet", color="blue")
+    elif model_selection in ['xgb','rf']:
         scaler_selection='None'
-        st.info("Skalierung nicht erforderlich")
+        st.badge("Skalierung nicht erforderlich", color="green")
+        st.badge("One-Hot-Encoding wird verwendet", color="blue")
+    else:
+        scaler_selection = 'None'
+        st.badge("Skalierung nicht erforderlich", color="green")
+        st.badge(" Kein One-Hot-Encoding", color="green")
 
     st.write("")
     test_size = st.slider("Anteil Validierungsset", min_value=10, max_value=50, value=20, step=5) / 100
@@ -208,14 +214,18 @@ else:
 st.divider()
 st.subheader("📈 Modell trainieren und evaluieren")
 st.write("")
-cols=st.columns(2)
+cols=st.columns([1,1,2])
 with cols[0]:
     st.metric("Anzahl Trainingsdaten", value=X_train.shape[0])
     st.write("")
     st.metric("Anzahl Validierungsdaten", value=X_test.shape[0])
 
-
 with cols[1]:
+    text = "Anzahl Features" if len(features)==X_train.shape[1] else "Anzahl Features mit One-Hot-Encoding"
+    st.metric(text, value=X_train.shape[1])
+
+
+with cols[2]:
     placeholder = st.empty()
     if exists:
         placeholder.info("Modellsetup bereits trainiert und abgespeichert!")
@@ -397,7 +407,7 @@ if st.session_state.model_training:
     gear=None
     model=None
 
-    required_widgets=input_features(features)
+    required_widgets=input_features(st.session_state.features)
 
     st.subheader("")
 

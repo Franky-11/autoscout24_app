@@ -132,8 +132,12 @@ def df_outliers_removed(df,factor=1.5):
                 iqr_bounds["mileage_q3"] - iqr_bounds["mileage_q1"]) * factor
 
     df_merged = pd.merge(df, iqr_bounds[['year', 'price_u_limit', 'mileage_u_limit']], on='year', how='left')
+
+    hp_iqr_bounds = df_merged["hp"].quantile([0.25, 0.75])
+    df_merged["hp_u_limit"] = hp_iqr_bounds[0.75]+(hp_iqr_bounds[0.75]-hp_iqr_bounds[0.25])*factor
+
     df_filtered_iqr = df_merged[
-        (df_merged['price'] <= df_merged['price_u_limit']) & (df_merged['mileage'] <= df_merged['mileage_u_limit'])]
+        (df_merged['price'] <= df_merged['price_u_limit']) & (df_merged['mileage'] <= df_merged['mileage_u_limit']) & (df_merged['hp'] <= df_merged['hp_u_limit'])]
 
     return df_merged,df_filtered_iqr,iqr_bounds
 
