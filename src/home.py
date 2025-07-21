@@ -15,5 +15,5 @@ pg = st.navigation([dataset,dashboard,ml])
 
 pg.run()
 
-st.caption("🧾 Version: v1.1.0")
+st.caption("🧾 Version: v1.2.0")
 

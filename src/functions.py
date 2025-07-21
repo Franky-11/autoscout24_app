@@ -132,8 +132,12 @@ def df_outliers_removed(df,factor=1.5):
                 iqr_bounds["mileage_q3"] - iqr_bounds["mileage_q1"]) * factor
 
     df_merged = pd.merge(df, iqr_bounds[['year', 'price_u_limit', 'mileage_u_limit']], on='year', how='left')
+
+    hp_iqr_bounds = df_merged["hp"].quantile([0.25, 0.75])
+    df_merged["hp_u_limit"] = hp_iqr_bounds[0.75]+(hp_iqr_bounds[0.75]-hp_iqr_bounds[0.25])*factor
+
     df_filtered_iqr = df_merged[
-        (df_merged['price'] <= df_merged['price_u_limit']) & (df_merged['mileage'] <= df_merged['mileage_u_limit'])]
+        (df_merged['price'] <= df_merged['price_u_limit']) & (df_merged['mileage'] <= df_merged['mileage_u_limit']) & (df_merged['hp'] <= df_merged['hp_u_limit'])]
 
     return df_merged,df_filtered_iqr,iqr_bounds
 
@@ -201,8 +205,6 @@ def plot_outliers(outliers_df,iqr_bounds):
 
 
 
-
-
 def layout():
     settings = {
         "hovermode": "x unified",
@@ -218,17 +220,6 @@ def layout():
     }
     return settings
 
-"""
-def plot_sales(df_sales):
-    fig = px.area(df_sales, x="year", y="size",color="offerType", color_discrete_sequence=px.colors.qualitative.Vivid)
-    fig.update_xaxes(title_text="")
-    fig.update_yaxes(title_text="Anzahl verkaufter Autos")
-    fig.update_traces(hovertemplate="<b>%{fullData.name}</b><br>" +
-                                    "%{y:,.0f}<extra></extra>")
-    fig.update_layout(**layout())
-    #fig.update_yaxes(range=[3500, 4500])
-    return fig
-"""
 
 def plot_make_pie(df,cat,years):
     """
@@ -310,43 +301,6 @@ def plot_make_pie_sales_volume(df,cat,years):
                        {sales_volume:.2f} Mio.**""")
             st.plotly_chart(fig, key=f"pie_sales_volume_{cat}_{year}")
 
-
-
-
-
-
-
-
-
-"""
-def plot_offer_cat(df_offer_cat,cat,options):
-
-    fig = px.area(df_offer_cat[df_offer_cat[cat].isin(options)], x="year", y="size", color="offerType",
-                  color_discrete_sequence=px.colors.qualitative.Pastel, facet_col=cat,
-                  facet_col_wrap=4)  # ,groupnorm="percent")
-    fig.update_xaxes(title_text="")
-    fig.update_yaxes(title_text="Anzahl verkaufter Autos")
-    fig.update_traces(hovertemplate="<b>%{fullData.name}</b><br>" +
-                                    "%{y:,.0f}<extra></extra>")
-
-
-    fig.update_xaxes(title_text="", matches=None, showgrid=False,
-                     tickfont=dict(size=14), title=dict(font=dict(size=14)))
-    # Alle Y-Achsen beschriften (Ticks und Zahlen), aber ohne Titel
-    for axis in fig.layout:
-        if axis.startswith("yaxis"):
-            fig.layout[axis].showticklabels = True
-            fig.layout[axis].tickfont = dict(size=14)
-            fig.layout[axis].title.text = ""  # leeren Titel setzen
-            fig.layout[axis].showgrid= False
-
-
-    # Nur die erste Y-Achse bekommt einen Titel
-    fig.layout.yaxis.title.text = "Anzahl verkaufter Autos"
-    fig.update_layout(hovermode="x unified")
-
-    return fig
-"""
 
 def top_10_sales(df,fuel,gear,year):
     """
