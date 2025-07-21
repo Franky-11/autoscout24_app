@@ -76,11 +76,6 @@ with cols[1]:
 features=features+engineered_features
 
 cat_cols,num_cols=cat_num_cols(df,features)
-df_features=feature_df(df,features,cat_cols)
-
-categorical_dummy_cols = [col for col in df_features.columns if col not in num_cols]
-X = df_features.copy()
-y = df['price']
 
 
 with cols[2]:
@@ -94,7 +89,7 @@ with cols[3]:
 
 with cols[0]:
     st.write("")
-    st.metric("Anzahl Features (nach One-Hot-Encoding)",value=df_features.shape[1],border=False)
+   # st.metric("Anzahl Features (nach One-Hot-Encoding)",value=df_features.shape[1],border=False)
 #   st.write(df_features.isna().sum())
 
 #---------------------------------------------------------------------------------------#
@@ -106,8 +101,8 @@ cols=st.columns([1,0.5,2.5,0.5,2])
 with cols[0]:
     model_selection = st.selectbox(
         'Wähle ein Regressionsmodell:',
-        ('lr', 'rf', 'xgb'),
-        format_func=lambda x: {'lr': 'Linear Regression', 'rf': 'Random Forest', 'xgb': 'XGBoost'}[x])
+        ('lr', 'rf', 'xgb','cat','lgb'),
+        format_func=lambda x: {'lr': 'Linear Regression', 'rf': 'Random Forest', 'xgb': 'XGBoost','cat':'CatBoost','lgb':'LightGBM'}[x])
 
 with cols[0]:
     if model_selection=="lr":
@@ -128,12 +123,18 @@ with cols[2]:
         pca_check = False
 
 
-model_dict={'lr':'Linear Regression','rf':'Random Forest','xgb':'XGBoost'}
+df_features=feature_df(df,features,cat_cols,model_selection)
+
+categorical_dummy_cols = [col for col in df_features.columns if col not in num_cols]
+X = df_features.copy()
+y = df['price']
+
+
+model_dict={'lr':'Linear Regression','rf':'Random Forest','xgb':'XGBoost','cat':'CatBoost','lgb':'LightGBM'}
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
-explained_variance=pca_explained_variance(X_train,model_selection,scaler_selection,categorical_dummy_cols,num_cols)
-
+explained_variance=pca_explained_variance(X_train,model_selection,scaler_selection,categorical_dummy_cols,num_cols,cat_cols)
 
 
 with cols[2]:
@@ -166,17 +167,41 @@ parameters_changed = (
     test_size != st.session_state.test_size
 )
 
+current_config = {
+    "Features": sorted(features),
+    "Model": model_dict[model_selection],
+    "Scaler": scaler_selection,
+    "PCA Active": pca_check,
+    "PCA Components": n_components if pca_check else 'N/A',
+    "Test Size": test_size}
 
-if parameters_changed:
+
+exists = False
+for idx, row in st.session_state.scenario_log.iterrows():
+    row_config = {
+        "Features": sorted(row["Features"]),
+        "Model": row["Model"],
+        "Scaler": row["Scaler"],
+        "PCA Active": row["PCA Active"],
+        "PCA Components": row["PCA Components"],
+        "Test Size": row["Test Size"]
+    }
+    if current_config == row_config:
+        exists = True
+        break
+
+
+if parameters_changed and not exists:
+#if not exists:
     st.session_state.model_training = False
-    st.session_state.show_scenarios_popover = False #
+    st.session_state.show_scenarios_popover = False
 
-st.session_state.features = features
-st.session_state.model = model_selection
-st.session_state.scaler = scaler_selection
-st.session_state.pca_check = pca_check
-st.session_state.n_components = n_components
-st.session_state.test_size = test_size
+else:
+    st.session_state.model_training = True
+    st.session_state.show_scenarios_popover = True
+
+
+
 
 #---------------------------------------------------------------------------------------#
 
@@ -192,20 +217,19 @@ with cols[0]:
 
 with cols[1]:
     placeholder = st.empty()
+    if exists:
+        placeholder.info("Modellsetup bereits trainiert und abgespeichert!")
     if not st.session_state.model_training:
         placeholder.info("Modell noch nicht trainiert!")
+
     if st.button("Modell trainieren"):
         st.session_state.model_training = True
         st.session_state.show_scenarios_popover = False
 
 
-        model,scaler=model_and_scaler(model_selection,scaler_selection)
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('num', scaler, num_cols),
-                ('cat', 'passthrough', categorical_dummy_cols)
-            ])
-        pipe=ml_pipe(preprocessor,pca_check,n_components,model_selection,model)
+        model,scaler=model_and_scaler(model_selection,scaler_selection,cat_cols)
+
+        pipe=ml_pipe(pca_check,n_components,model_selection,model,scaler,categorical_dummy_cols,num_cols)
 
         st.markdown("**Struktur der Pipeline:**")
 
@@ -215,16 +239,33 @@ with cols[1]:
 
         with st.spinner("Training läuft... Dies kann einen Moment dauern."):
             # Modell trainieren
-            pipe.fit(X_train, y_train)
+            if model_selection=='lgb':
+                pipe.fit(X_train,y_train,lgb__categorical_feature=cat_cols)
+            else:
+                pipe.fit(X_train, y_train)
+
             y_pred = pipe.predict(X_test)
             rmse, r_2, mae=performance(y_test,y_pred)
 
+            st.session_state.X_train = X_train
+            st.session_state.y_test = y_test
             st.session_state.y_pred = y_pred
             st.session_state.rmse = rmse
             st.session_state.r2 = r_2
             st.session_state.mae = mae
             st.session_state.pipe = pipe
             st.session_state.model_obj = model
+            st.session_state.model_selection = model_selection
+            st.session_state.categorical_dummy_cols = categorical_dummy_cols
+
+            st.session_state.features = features
+            st.session_state.model = model_selection
+            st.session_state.scaler = scaler_selection
+            st.session_state.pca_check = pca_check
+            st.session_state.n_components = n_components
+            st.session_state.test_size = test_size
+
+
 
 
 
@@ -235,7 +276,7 @@ if st.session_state.model_training:
     with st.container(border=True,height=1000):
         cols=st.columns([3,0.5,1,0.5])
         with cols[0]:
-            st.markdown(f"**Modell Performance {model_dict[model_selection]} auf dem Validierungsset**")
+            st.markdown(f"**Modell Performance {model_dict[st.session_state.model_selection]} auf dem Validierungsset**")
             inner_cols=st.columns(3)
             with inner_cols[0]:
                 st.metric("RMSE",value=f"{st.session_state.rmse:.0f}")
@@ -245,8 +286,8 @@ if st.session_state.model_training:
                 st.metric("MAE", value=f"{st.session_state.mae:.0f}")
 
 
-            qq=qq_plot(y_test,st.session_state.y_pred)
-            res_skew,res_kurt,delta_skew,delta_kurt=check_residuals(y_test, st.session_state.y_pred)
+            qq=qq_plot(st.session_state.y_test,st.session_state.y_pred)
+            res_skew,res_kurt,delta_skew,delta_kurt=check_residuals(st.session_state.y_test, st.session_state.y_pred)
 
             with st.popover("Residuen Analyse",use_container_width=True):
                 tab_qq,tab_error=st.tabs(["QQ-Plot","Fehler nach Preissegmenten"])
@@ -274,10 +315,10 @@ if st.session_state.model_training:
 
                 with tab_error:
                     st.markdown("**Fehler nach Preissegmenten**")
-                    st.plotly_chart(error_price_segments(y_test,st.session_state.y_pred))
+                    st.plotly_chart(error_price_segments(st.session_state.y_test,st.session_state.y_pred))
 
 
-            fig = plot_pred_vs_true(y_test, st.session_state.y_pred)
+            fig = plot_pred_vs_true(st.session_state.y_test, st.session_state.y_pred)
             st.plotly_chart(fig, use_container_width=True)
 
         with cols[2]:
@@ -285,7 +326,7 @@ if st.session_state.model_training:
             st.subheader("")
             st.subheader("")
             st.markdown("**Feature Importance**")
-            df_importance=feature_importance(st.session_state.pipe,model_selection)
+            df_importance=feature_importance(st.session_state.pipe,st.session_state.model_selection,st.session_state.X_train)
             st.dataframe(df_importance,use_container_width=True,hide_index=True)
 
 
@@ -335,14 +376,18 @@ if st.session_state.model_training:
     pca_text = "PCA aktiviert mit {} Komponenten".format(
         st.session_state.n_components) if st.session_state.pca_check else "PCA deaktiviert"
 
-    st.markdown(f"""
-    **Pipeline-Konfiguration für Vorhersage**
-    -    Skalierer: **{st.session_state.scaler}**
-    -    {pca_text}
-    -    Modell: **{model_dict[st.session_state.model]}**
-    """)
-
-
+    save_info = st.empty()
+    if st.session_state.scenario_log.empty:
+        save_info.info("Zum Speichern der Vorhersage Pipeline speichern!")
+    elif not st.session_state.show_scenarios_popover:
+        save_info.info("Neue Pipeline noch nicht gespeichert!")
+    else:
+        st.markdown(f"""
+        **Pipeline-Konfiguration für Vorhersage**
+        -    Skalierer: **{st.session_state.scaler}**
+        -    {pca_text}
+        -    Modell: **{model_dict[st.session_state.model]}**
+        """)
 
     hp=None
     year=None
@@ -377,8 +422,6 @@ if st.session_state.model_training:
                model = st.selectbox("Modell", model_options, index=0)
 
 
-
-
         with cols[2]:
           if 'fuel' in required_widgets:
               fuel=st.segmented_control("Kraftstoff",options=sorted(df['fuel'].unique()),default='Gasoline')
@@ -386,7 +429,8 @@ if st.session_state.model_training:
               gear=st.segmented_control("Getriebe",options=sorted(df['gear'].unique()),default='Manual')
 
 
-        new_car_df=car_data(categorical_dummy_cols,X_train,hp=hp ,year=year ,mileage=mileage ,make=make ,fuel=fuel ,gear=gear ,model=model)
+        new_car_df=car_data(st.session_state.model_selection,st.session_state.categorical_dummy_cols,st.session_state.X_train,cat_cols,hp=hp ,year=year ,mileage=mileage ,make=make ,fuel=fuel ,gear=gear ,model=model)
+
 
         car_price=st.session_state.pipe.predict(new_car_df)
 
@@ -410,12 +454,7 @@ if st.session_state.model_training:
             st.metric('Vorhergesagter Preis', value=f"{car_price[0]:.0f}")
 
         with col_save:
-            save_info=st.empty()
-            if st.session_state.scenario_log.empty:
-                save_info.info("Zum Speichern der Vorhersage Pipeline speichern!")
-            elif not st.session_state.show_scenarios_popover:
-                save_info.info("Neue Pipeline noch nicht gespeichert!")
-            else:
+            if not st.session_state.scenario_log.empty and st.session_state.show_scenarios_popover:
                 if st.button("Preisvorhersage speichern"):
                     st.session_state.car_price = pd.concat([st.session_state.car_price, pd.DataFrame([new_price])],                                        ignore_index=True)
                     st.success("Preisvorhersage gespeichert!")
