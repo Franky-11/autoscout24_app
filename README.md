@@ -34,7 +34,7 @@ source .venv/bin/activate  # macOS/Linux
 .venv\Scripts\activate      # Windows
 
 # Abhängigkeiten installieren
-pip install -r requirements.txt
+pip install -r ../requirements.txt
 
 # Streamlit starten
 streamlit run home.py
