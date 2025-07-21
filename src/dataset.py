@@ -25,7 +25,7 @@ st.plotly_chart(fig,use_container_width=True)
 
 st.divider()
 st.markdown(
-    "**Entfernen von Ausreißern (Preis,Mileage,HP) mittels IQR**")
+    "**Entfernen von numerischen Ausreißern mittels IQR**")
 cols=st.columns([1,0.5,2])
 with cols[0]:
     st.markdown("""
