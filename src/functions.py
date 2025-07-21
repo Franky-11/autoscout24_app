@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
-
+@st.cache_data
 def read_csv():
     """
         Lädt die  Autoscout24-Datendatei, entfernt Duplikate und NaNs.
@@ -27,7 +27,7 @@ def read_csv():
 
     return df
 
-
+@st.cache_data
 def image_path():
     """
         Liefert den Pfad zur 'cardealer.png' Bilddatei im aktuellen Projektverzeichnis.
@@ -42,7 +42,7 @@ def image_path():
     return image_file_path
 
 
-
+@st.cache_data
 def read_csv_with_nan_duplicates():
     """
         Lädt die Autoscout24-Datendatei inklusive Duplikaten und fehlender Werte.
