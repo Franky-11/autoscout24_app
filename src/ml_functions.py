@@ -2,7 +2,7 @@
 #import os
 from pathlib import Path
 
-
+import streamlit as st
 import numpy as np
 import pandas as pd
 
@@ -28,7 +28,7 @@ from xgboost import XGBRegressor
 #from catboost import CatBoostRegressor
 
 
-
+@st.cache_data
 def read_preprocess_df(factor = 1.5):
     """
         Lädt und bereinigt die Autoscout24-Daten, entfernt Ausreißer via IQR,
