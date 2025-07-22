@@ -22,7 +22,7 @@ with col_info:
     st.info("""
     **Interaktive Web-App** für Datenanalyse & Machine Learning  
     Datengrundlage: [**Germany Cars Dataset Kaggle**](https://www.kaggle.com/datasets/ander289386/cars-germany)  
-    - **Datensatz & Dashboard:**      Überblick über die Daten | interaktive Visualisierungen zur Dateninspektion.
+    - **Datensatz & Dashboard:**      Überblick über die Daten | interaktive Visualisierungen zur Dateninspektion
     - **ML-Modul:**                   Auswahl verschiedener Machine Learning Modelle | Training & Modellperformance | Pipeline-Konfigurationen speichern und vergleichen
     - **Vorhersagemodul:**            Erstellen individueller Preisprognosen für spezifische Fahrzeugkonfigurationen
     - **Downloadbereich:**            Download von gespeicherten ML-Pipelines & Preisvorhersagen
