@@ -50,3 +50,5 @@ secrets.yml
 
 *.swp
 *.bak
+
+ catboost_info/
