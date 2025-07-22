@@ -372,6 +372,15 @@ if st.session_state.model_training:
         if st.session_state.show_scenarios_popover:
             with st.popover("Gespeicherte Pipelines",use_container_width=True):
                 st.dataframe(st.session_state.scenario_log)
+            if not st.session_state.scenario_log.empty:
+                best_id=st.session_state.scenario_log["RMSE"].idxmin()
+                best_pipeline=st.session_state.scenario_log.loc[best_id]
+                st.markdown(
+                    f"""**Beste Pipeline bisher ➡️**&nbsp;&nbsp;&nbsp;&nbsp; 
+                      **Pipe ID**&nbsp;&nbsp; {best_pipeline['Pipe ID']}&nbsp;&nbsp; |&nbsp;&nbsp; **Modell**&nbsp;&nbsp; {best_pipeline['Model']}&nbsp;&nbsp; |&nbsp;&nbsp; **RMSE**&nbsp;&nbsp; {int(best_pipeline['RMSE'])}
+                """)
+
+
 
 
 
