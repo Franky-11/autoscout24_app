@@ -275,7 +275,7 @@ def ml_pipe(pca_check,n_components,model_selection,model,scaler,categorical_dumm
         Baut eine ML-Pipeline mit Preprocessing, optional PCA und gewähltem Modell.
 
         Args:
-            preprocessor (ColumnTransformer): Feature-Transformation.
+
             pca_check (bool): Ob PCA integriert werden soll.
             n_components (int): Anzahl PCA-Komponenten.
             model_selection (str): Modellkürzel.

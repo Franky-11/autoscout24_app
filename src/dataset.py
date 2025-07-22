@@ -1,5 +1,5 @@
 import streamlit as st
-from functions import read_csv_with_nan_duplicates,show_nan,df_outliers_removed,plot_outliers,get_outliers,image_path
+from functions import read_csv_with_nan_duplicates,show_nan,df_outliers_removed,plot_outliers,get_outliers
 
 
 df=read_csv_with_nan_duplicates()
