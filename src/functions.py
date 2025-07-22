@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 import streamlit as st
-
+import base64
 
 @st.cache_data
 def read_csv():
@@ -30,14 +30,14 @@ def read_csv():
 @st.cache_data
 def image_path():
     """
-        Liefert den Pfad zur 'cardealer.png' Bilddatei im aktuellen Projektverzeichnis.
+        Liefert den Pfad zur  Bilddatei im aktuellen Projektverzeichnis.
 
         Returns:
             pathlib.Path: Pfad zur Bilddatei.
     """
     script_path = Path(__file__).resolve()
     src_dir = script_path.parent
-    image_file_path = src_dir / "cardealer.png"
+    image_file_path = src_dir / "car_dealer.png"
 
     return image_file_path
 
@@ -477,8 +477,6 @@ def plot_rel_price_box(data_frame,color_value,mileage=False,price_mileage=False)
         fig.layout.yaxis.title.text = "Preis"
 
     return fig
-
-
 
 
 

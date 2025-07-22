@@ -6,7 +6,7 @@ df=read_csv_with_nan_duplicates()
 
 
 
-st.image(image_path() ,width=500)
+
 st.title(":material/dataset: Datensatz")
 
 st.divider()
