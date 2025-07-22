@@ -45,8 +45,8 @@ techs_list = [
     ":cat: CatBoost",
     ":dragon: XGBoost",
     ":bar_chart: Plotly",
-    ":computer: Streamlit"
-]
+    ":computer: Streamlit",
+    ":straight_ruler: Scipy"]
 
 
 tech_cols = st.columns(3)
