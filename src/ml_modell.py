@@ -1,5 +1,6 @@
 import joblib
 import io
+import time
 
 from sklearn.model_selection import train_test_split
 
@@ -18,7 +19,7 @@ if 'model_training' not in st.session_state:
 if 'scenario_log' not in st.session_state:
         st.session_state.scenario_log = pd.DataFrame(columns=[
             'Pipe ID','Features','Anzahl Features', 'Model', 'Scaler', 'PCA Active', 'PCA Components','Test Size',
-            'Model Parameters', 'R2 Score', 'RMSE','MAE'])
+            'Model Parameters','Train Time (s)', 'R2 Score', 'RMSE','MAE'])
 
 
 if 'car_price' not in st.session_state:
@@ -250,13 +251,20 @@ with cols[2]:
         with st.spinner("Training läuft... Dies kann einen Moment dauern."):
             # Modell trainieren
             if model_selection=='lgb':
+                start = time.perf_counter()
                 pipe.fit(X_train,y_train,lgb__categorical_feature=cat_cols)
+                delta = time.perf_counter() - start
+
             else:
+                start = time.perf_counter()
                 pipe.fit(X_train, y_train)
+                delta = time.perf_counter() - start
+
 
             y_pred = pipe.predict(X_test)
             rmse, r_2, mae=performance(y_test,y_pred)
 
+            st.session_state.train_time = delta
             st.session_state.X_train = X_train
             st.session_state.y_test = y_test
             st.session_state.y_pred = y_pred
@@ -357,6 +365,7 @@ if st.session_state.model_training:
                 'PCA Components': n_components if pca_check else 'N/A',
                 'Test Size': test_size,
                 'Model Parameters': str(relevant_params),
+                'Train Time (s)': st.session_state.train_time,
                 'R2 Score': st.session_state.r2,
                 'RMSE': st.session_state.rmse,
                 'MAE':st.session_state.mae
@@ -371,7 +380,14 @@ if st.session_state.model_training:
 
         if st.session_state.show_scenarios_popover:
             with st.popover("Gespeicherte Pipelines",use_container_width=True):
-                st.dataframe(st.session_state.scenario_log)
+                st.dataframe(st.session_state.scenario_log.style.format({
+                    'Test Size': "{:.2f}",
+                    'Train Time (s)': "{:.2f}",
+                    'R2 Score': "{:.3f}",
+                    'RMSE': "{:.0f}",
+                    'MAE': "{:.0f}"
+                }))
+
             if not st.session_state.scenario_log.empty:
                 best_id=st.session_state.scenario_log["RMSE"].idxmin()
                 best_pipeline=st.session_state.scenario_log.loc[best_id]
