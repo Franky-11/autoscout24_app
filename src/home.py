@@ -21,5 +21,5 @@ pg = st.navigation([welcome,dataset,dashboard,ml])
 
 pg.run()
 
-st.caption("🧾 Version: v1.2.2 | Entwickler: Frank Schulnies")
+st.caption("🧾 Version: v1.2.3 | Entwickler: Frank Schulnies")
 
