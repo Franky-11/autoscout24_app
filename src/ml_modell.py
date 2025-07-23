@@ -345,7 +345,7 @@ if st.session_state.model_training:
             st.subheader("")
             st.markdown("**Feature Importance**")
             df_importance=feature_importance(st.session_state.pipe,st.session_state.model_selection,st.session_state.X_train)
-            st.dataframe(df_importance,use_container_width=True,hide_index=True)
+            st.dataframe(df_importance.style.format({'Importance':'{:.2f}','Relative%':'{:.2f}'}),use_container_width=True,hide_index=True)
 
 
 
