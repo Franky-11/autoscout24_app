@@ -81,6 +81,5 @@ autoscout24/             ← Projekt-Root
 ```
 
 ---
-✍️ Entwickler
-
-Frank Schulnies 
+## 📜 Lizenz
+Code: MIT – siehe LICENSE.
