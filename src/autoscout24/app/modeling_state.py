@@ -73,6 +73,7 @@ def initialize_modeling_state() -> None:
         "setup_model_params": None,
         "setup_candidate_label": None,
         "setup_candidate_signature": None,
+        "pending_screening_candidate": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -243,12 +244,27 @@ def apply_screening_candidate(candidate: dict[str, object]) -> None:
             int(candidate["PCA Components"]) if candidate["PCA Components"] != "N/A" else 10
         ),
     }
+    st.session_state.pending_screening_candidate = None
+
+
+def queue_screening_candidate(candidate: dict[str, object]) -> None:
+    st.session_state.pending_screening_candidate = candidate
+
+
+def consume_pending_screening_candidate() -> bool:
+    candidate = st.session_state.pending_screening_candidate
+    if not candidate:
+        return False
+
+    apply_screening_candidate(candidate)
+    return True
 
 
 def clear_screening_candidate() -> None:
     st.session_state.setup_model_params = None
     st.session_state.setup_candidate_label = None
     st.session_state.setup_candidate_signature = None
+    st.session_state.pending_screening_candidate = None
 
 
 def screening_candidate_still_matches(

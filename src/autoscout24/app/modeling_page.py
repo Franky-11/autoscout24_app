@@ -11,11 +11,12 @@ from autoscout24.app.modeling_sections import (
     render_training_summary,
 )
 from autoscout24.app.modeling_state import (
-    apply_screening_candidate,
     build_config_signature,
     clear_screening_candidate,
     config_exists,
+    consume_pending_screening_candidate,
     initialize_modeling_state,
+    queue_screening_candidate,
     screening_candidate_still_matches,
 )
 from autoscout24.data.io import load_modeling_dataset
@@ -221,12 +222,12 @@ def _render_model_comparison(
     action_cols = st.columns([1.4, 1.6, 3])
     with action_cols[0]:
         if st.button("Besten Kandidaten übernehmen"):
-            apply_screening_candidate(best_candidate.to_dict())
+            queue_screening_candidate(best_candidate.to_dict())
             st.rerun()
     with action_cols[1]:
         if st.button("Ausgewählten Kandidaten übernehmen"):
             candidate = st.session_state.comparison_results.loc[selected_candidate_index]
-            apply_screening_candidate(candidate.to_dict())
+            queue_screening_candidate(candidate.to_dict())
             st.rerun()
 
     st.dataframe(
@@ -535,6 +536,8 @@ def _render_artifacts_tab() -> None:
 
 def render_page() -> None:
     initialize_modeling_state()
+    if consume_pending_screening_candidate():
+        st.rerun()
 
     st.title(":material/model_training: Machine Learning zur Preisvorhersage")
     st.divider()
@@ -559,6 +562,19 @@ def render_page() -> None:
 
     with page_tabs[0]:
         st.subheader("Setup")
+        candidate_locked = st.session_state.setup_candidate_label is not None
+        if candidate_locked:
+            info_cols = st.columns([3, 1])
+            with info_cols[0]:
+                st.info(
+                    "Ein Kandidat aus dem Screening ist aktiv. "
+                    "Modell, Skalierer und PCA sind aus dem Screening übernommen."
+                )
+            with info_cols[1]:
+                if st.button("Kandidat lösen"):
+                    clear_screening_candidate()
+                    st.rerun()
+
         feature_cols = st.columns([1.5, 1.5, 2])
         with feature_cols[0]:
             base_features = st.multiselect(
@@ -588,6 +604,7 @@ def render_page() -> None:
                 ("lr", "rf", "xgb", "cat", "lgb"),
                 format_func=lambda key: MODEL_LABELS[key],
                 key="setup_model_key",
+                disabled=candidate_locked,
             )
         with config_cols[1]:
             if model_selection == "lr":
@@ -596,6 +613,7 @@ def render_page() -> None:
                     options=["None", "Standard", "MinMax"],
                     default=st.session_state.setup_scaler_key,
                     key="setup_scaler_key",
+                    disabled=candidate_locked,
                 )
             else:
                 scaler_selection = "None"
@@ -628,6 +646,7 @@ def render_page() -> None:
                 "PCA aktivieren?",
                 value=st.session_state.setup_pca_enabled,
                 key="setup_pca_enabled",
+                disabled=candidate_locked,
             )
         with config_cols[4]:
             n_components = st.session_state.setup_n_components
@@ -680,6 +699,7 @@ def render_page() -> None:
                     max_value=max_components,
                     value=min(n_opt, max_components),
                     key="setup_n_components",
+                    disabled=candidate_locked,
                 )
                 st.caption(f"95% erklärte Varianz bei ca. {n_opt} Komponenten.")
                 st.plotly_chart(
