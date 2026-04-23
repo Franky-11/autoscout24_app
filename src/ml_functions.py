@@ -1,4 +1,3 @@
-
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -6,25 +5,23 @@ import pandas as pd
 
 import plotly.express as px
 import plotly.graph_objects as go
-
-
 from scipy.stats import kurtosis, probplot, skew
 
-
-from sklearn import metrics
-from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
-
-
-from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
-from catboost import CatBoostRegressor
-
 from autoscout24.data.io import load_modeling_dataset
+from autoscout24.features.engineering import (
+    apply_feature_engineering,
+    build_feature_frame,
+    build_vehicle_input_frame,
+    get_engineered_feature_names,
+    required_prediction_inputs,
+    split_feature_types,
+)
+from autoscout24.modeling.service import (
+    build_model_and_scaler,
+    build_pipeline,
+    calculate_pca_explained_variance,
+    calculate_regression_metrics,
+)
 
 
 @st.cache_data
@@ -52,32 +49,7 @@ def feature_engineering(df_2):
     Returns:
         pd.DataFrame: Erweiterter Datensatz mit neuen Features und engineered_feature Liste
     """
-    df = df_2.copy()
-
-    engineered_features = ["car_age", "mileage_per_year", "log_mileage", "log_hp", "make_model", "fuel_gear_combo"]
-
-    # Fahrzeugalter
-    current_year = 2021   # Anahme das der Datensatz aus 2021 stammt, 2021 erst offerType Neuwagen ist
-    df["car_age"] = current_year - df["year"]
-
-    # Nutzung pro Jahr
-    df["mileage_per_year"] = df["mileage"] / df["car_age"].replace(0, 1)
-
-    # Log-Transformationen
-    df["log_mileage"] = np.log(df["mileage"] + 1)
-    df["log_hp"] = np.log(df["hp"] + 1)
-
-    # Kombinierte Features
-    df["make_model"] = df["make"].astype(str) + "_" + df["model"].astype(str)
-    df["fuel_gear_combo"] = df["fuel"].astype(str) + "_" + df["gear"].astype(str)
-
-    # Kategorisieren
-    df["make_model"] = df["make_model"].astype("category")
-    df["fuel_gear_combo"] = df["fuel_gear_combo"].astype("category")
-
-   # df_engineered_features=df[["car_age","mileage_per_year","log_mileage","log_hp","make_model","fuel_gear_combo"]]
-
-    return df,engineered_features
+    return apply_feature_engineering(df_2), get_engineered_feature_names()
 
 
 
@@ -92,9 +64,7 @@ def cat_num_cols(df,features):
         Returns:
             tuple: (List kategorischer Features, List numerischer Features)
     """
-    categorical_cols = [feature for feature in features if df[feature].dtype == "category"]
-    numerical_cols = [feature for feature in features if feature not in categorical_cols]
-    return categorical_cols,numerical_cols
+    return split_feature_types(df, features)
 
 
 
@@ -110,9 +80,7 @@ def feature_df(df,features,categorical_cols,model_selection):
         Returns:
             pd.DataFrame: Modellfähiger Feature-Vektor.
     """
-    df_features = df[features].copy()
-    if model_selection not in ['lgb','cat']:
-        df_features = pd.get_dummies(df_features, columns=categorical_cols, drop_first=True)
+    df_features, _, _ = build_feature_frame(df, features, model_selection)
     return df_features
 
 
@@ -129,22 +97,7 @@ def model_and_scaler(model_selection,scaler_selection,cat_cols):
         Returns:
             tuple: (Modellobjekt, Skalierungsobjekt oder 'passthrough')
     """
-
-
-    model_dict={'lr':LinearRegression(),
-                 'rf':RandomForestRegressor(n_estimators=300,max_depth=None,min_samples_split=2,max_features='log2',random_state=42),
-                'xgb':XGBRegressor(random_state=42, n_jobs=-1,colsample_bytree= 0.8, learning_rate= 0.1, max_depth=7, n_estimators= 300, subsample= 1.0),
-                'cat':CatBoostRegressor(learning_rate=0.1,depth=7,rsm=0.8,subsample=1.0,random_seed=42,loss_function="RMSE",cat_features=cat_cols),
-                'lgb':LGBMRegressor(random_state=42,n_jobs=-1,colsample_bytree=0.8, learning_rate=0.1,max_depth=7, n_estimators=300,subsample=1.0)}
-
-
-
-    scaler_dict={'Standard':StandardScaler(),'MinMax':MinMaxScaler(),'None':'passthrough'}
-
-    model = model_dict[model_selection]
-    scaler = scaler_dict[scaler_selection]
-
-    return model,scaler
+    return build_model_and_scaler(model_selection, scaler_selection, cat_cols)
 
 def pca_explained_variance(X_train,model_selection,scaler_selection,categorical_dummy_cols,num_cols,cat_cols):
     """
@@ -161,21 +114,14 @@ def pca_explained_variance(X_train,model_selection,scaler_selection,categorical_
             np.ndarray: Array kumulierter Varianz je Hauptkomponente.
     """
 
-    _,scaler=model_and_scaler(model_selection,scaler_selection,cat_cols)
-
-    if model_selection not in ['lgb','cat']:
-        preprocessor_for_pca = ColumnTransformer(
-                    transformers=[
-                        ('num', scaler, num_cols),
-                        ('cat', 'passthrough', categorical_dummy_cols)
-                    ])
-        pipe_for_pca=Pipeline([('preprocessor', preprocessor_for_pca),('pca', PCA(n_components=X_train.shape[1]))])
-        pipe_for_pca.fit_transform(X_train)
-        explained_var=np.cumsum(pipe_for_pca['pca'].explained_variance_ratio_)
-
-        return explained_var
-
-    return None
+    return calculate_pca_explained_variance(
+        X_train,
+        model_selection,
+        scaler_selection,
+        categorical_dummy_cols,
+        num_cols,
+        cat_cols,
+    )
 
 
 def plot_explained_var(explained_var):
@@ -248,22 +194,15 @@ def ml_pipe(pca_check,n_components,model_selection,model,scaler,categorical_dumm
         Returns:
             Pipeline: Sklearn-Pipeline für Training und Vorhersage.
     """
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('num', scaler, num_cols),
-            ('cat', 'passthrough', categorical_dummy_cols)
-        ])
-
-    pipeline_steps = [('preprocessor', preprocessor)]
-    if pca_check:
-        pipeline_steps.append(('pca', PCA(n_components=n_components)))
-    pipeline_steps.append((model_selection, model))
-    pipe = Pipeline(pipeline_steps)
-
-    if model_selection in ["cat","lgb"]:
-        pipe=Pipeline([(model_selection,model)])
-
-    return pipe
+    return build_pipeline(
+        pca_check,
+        n_components,
+        model_selection,
+        model,
+        scaler,
+        categorical_dummy_cols,
+        num_cols,
+    )
 
 
 def performance(y_test,y_pred):
@@ -277,10 +216,7 @@ def performance(y_test,y_pred):
         Returns:
             tuple: (RMSE, R²-Score, MAE)
     """
-    rmse = metrics.root_mean_squared_error(y_test, y_pred)
-    r_2 = metrics.r2_score(y_test, y_pred)
-    mae = metrics.mean_absolute_error(y_test, y_pred)
-    return rmse,r_2,mae
+    return calculate_regression_metrics(y_test, y_pred)
 
 
 def plot_pred_vs_true(y_test,y_pred):
@@ -502,29 +438,26 @@ def input_features(features):
         :param features: Alle features die für das Modell genutzt wurden
         :return: features die für das setzen der Widgets genutzt werden
     """
-    required_inputs = {
-        "car_age": ["year"],
-        "mileage_per_year": ["mileage", "year"],
-        "log_mileage": ["mileage"],
-        "log_hp": ["hp"],
-        "make_model": ["make", "model"],
-        "fuel_gear_combo": ["fuel", "gear"]
-    }
-
-    input_features = set()
-
-    for feature in features:
-        if feature in required_inputs:
-            input_features.update(required_inputs[feature])
-        else:
-            input_features.add(feature)
-
-    return input_features
+    return required_prediction_inputs(features)
 
 
 
 
-def car_data(model_selection,categorical_dummy_cols,X_train,cat_cols,hp=None,year=None,mileage=None,make=None,fuel=None,gear=None,model=None):
+def car_data(
+    model_selection,
+    categorical_dummy_cols,
+    X_train,
+    cat_cols,
+    selected_features,
+    hp=None,
+    year=None,
+    mileage=None,
+    make=None,
+    fuel=None,
+    gear=None,
+    model=None,
+    offerType=None,
+):
     """
         Erzeugt einen Feature-Vektor für ein einzelnes Fahrzeug basierend auf Benutzerangaben,
         passend zur Struktur des Trainingsdatensatzes (Dummy-kodierte Kategorien und numerische Merkmale).
@@ -532,6 +465,7 @@ def car_data(model_selection,categorical_dummy_cols,X_train,cat_cols,hp=None,yea
         Args:
             categorical_dummy_cols (list): Liste aller Dummy-Features (One-Hot-kodierte Spaltennamen).
             X_train (pd.DataFrame): Trainingsdaten, um die Spaltenstruktur zu übernehmen.
+            selected_features (list): Ursprünglich ausgewählte Features vor One-Hot-Encoding.
             hp (float, optional): Motorleistung in PS.
             year (int, optional): Erstzulassungsjahr.
             mileage (float, optional): Kilometerstand.
@@ -539,61 +473,26 @@ def car_data(model_selection,categorical_dummy_cols,X_train,cat_cols,hp=None,yea
             fuel (str, optional): Kraftstofftyp.
             gear (str, optional): Getriebeart.
             model (str, optional): Modellbezeichnung.
+            offerType (str, optional): Angebotstyp.
 
         Returns:
             pd.DataFrame: 1-zeiliger Feature-Vektor für Modellinput.
     """
-
-    car_age = 2021 - year if year is not None else None
-    mileage_per_year = mileage / max(car_age, 1) if mileage is not None and car_age is not None else None
-    log_mileage = np.log(mileage + 1) if mileage is not None else None
-    log_hp = np.log(hp + 1) if hp is not None else None
-
-    make_model = f"{make}_{model}" if make and model else None
-    fuel_gear_combo = f"{fuel}_{gear}" if fuel and gear else None
-
-    new_car_data = {}
-
-    cat_dict={"make":make,"fuel":fuel,"gear":gear,"model":model,"make_model":make_model,"fuel_gear_combo":fuel_gear_combo}
-
-
-
-    # Numerische Merkmale setzen
-    for feature_name, value in {
+    vehicle_inputs = {
         "hp": hp,
         "year": year,
         "mileage": mileage,
-        "car_age": car_age,
-        "mileage_per_year": mileage_per_year,
-        "log_mileage": log_mileage,
-        "log_hp": log_hp
-    }.items():
-        if feature_name in X_train.columns:
-            new_car_data[feature_name] = value
+        "make": make,
+        "fuel": fuel,
+        "gear": gear,
+        "model": model,
+        "offerType": offerType,
+    }
 
-    # Kategorische Merkmale setzen
-    if model_selection not in ['cat','lgb']:
-        # One-Hot-Encoding setzen, nur wenn Spalte existiert
-        for col in categorical_dummy_cols:
-            new_car_data[col] = 0
-
-        for prefix, value in cat_dict.items():
-            dummy_col = f"{prefix}_{value}"
-            if dummy_col in categorical_dummy_cols:
-                new_car_data[dummy_col] = 1
-
-    else:
-        for feature_name, value in cat_dict.items():
-            if feature_name in X_train.columns:
-                new_car_data[feature_name] = value
-
-
-    new_car_df = pd.DataFrame([new_car_data])
-
-    new_car_df = new_car_df[X_train.columns]
-    for col in cat_cols:
-        if col in new_car_df.columns:
-            new_car_df[col] = new_car_df[col].astype("category")
-
-    return new_car_df
-
+    return build_vehicle_input_frame(
+        vehicle_inputs=vehicle_inputs,
+        selected_features=selected_features,
+        training_columns=X_train.columns.tolist(),
+        categorical_columns=cat_cols,
+        model_selection=model_selection,
+    )
