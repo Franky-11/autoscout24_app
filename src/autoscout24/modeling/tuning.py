@@ -159,12 +159,17 @@ def compare_model_candidates(
             )
             rows.append(
                 {
+                    "Candidate Label": (
+                        f"{MODEL_LABELS[candidate.model_key]} | {candidate.scaler_selection} | "
+                        f"PCA {'an' if candidate.pca_check else 'aus'}"
+                    ),
                     "Model Key": candidate.model_key,
                     "Model": MODEL_LABELS[candidate.model_key],
                     "Scaler": candidate.scaler_selection,
                     "PCA": candidate.pca_check,
                     "PCA Components": candidate_components if candidate.pca_check else "N/A",
                     "Parameters": str(candidate.model_params),
+                    "Parameters Raw": candidate.model_params,
                     "CV RMSE": cv_summary.mean_rmse,
                     "CV RMSE Std": cv_summary.std_rmse,
                     "CV MAE": cv_summary.mean_mae,

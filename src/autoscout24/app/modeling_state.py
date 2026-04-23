@@ -63,6 +63,16 @@ def initialize_modeling_state() -> None:
         "evaluation_report": None,
         "persisted_runs_loaded": False,
         "comparison_results": pd.DataFrame(),
+        "setup_model_key": "lr",
+        "setup_scaler_key": "Standard",
+        "setup_target_transform": "raw",
+        "setup_test_size_pct": 20,
+        "setup_cv_folds": 3,
+        "setup_pca_enabled": False,
+        "setup_n_components": 10,
+        "setup_model_params": None,
+        "setup_candidate_label": None,
+        "setup_candidate_signature": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -214,3 +224,46 @@ def _next_pipe_id(scenario_log: pd.DataFrame) -> int:
     if scenario_log.empty:
         return 1
     return int(scenario_log["Pipe ID"].max()) + 1
+
+
+def apply_screening_candidate(candidate: dict[str, object]) -> None:
+    st.session_state.setup_model_key = candidate["Model Key"]
+    st.session_state.setup_scaler_key = candidate["Scaler"]
+    st.session_state.setup_pca_enabled = bool(candidate["PCA"])
+    st.session_state.setup_n_components = (
+        int(candidate["PCA Components"]) if candidate["PCA Components"] != "N/A" else 10
+    )
+    st.session_state.setup_model_params = dict(candidate["Parameters Raw"])
+    st.session_state.setup_candidate_label = candidate["Candidate Label"]
+    st.session_state.setup_candidate_signature = {
+        "model_key": candidate["Model Key"],
+        "scaler_key": candidate["Scaler"],
+        "pca_enabled": bool(candidate["PCA"]),
+        "n_components": (
+            int(candidate["PCA Components"]) if candidate["PCA Components"] != "N/A" else 10
+        ),
+    }
+
+
+def clear_screening_candidate() -> None:
+    st.session_state.setup_model_params = None
+    st.session_state.setup_candidate_label = None
+    st.session_state.setup_candidate_signature = None
+
+
+def screening_candidate_still_matches(
+    *,
+    model_key: str,
+    scaler_key: str,
+    pca_enabled: bool,
+    n_components: int,
+) -> bool:
+    signature = st.session_state.setup_candidate_signature
+    if not signature:
+        return False
+    return signature == {
+        "model_key": model_key,
+        "scaler_key": scaler_key,
+        "pca_enabled": pca_enabled,
+        "n_components": n_components,
+    }

@@ -160,7 +160,9 @@ def render_page() -> None:
                 ["price", "mileage", "hp", "year"],
             )
             st.dataframe(
-                comparison_summary[["Feature", "mean", "50%", "max"]].style.format("{:.0f}"),
+                comparison_summary[["Feature", "mean", "50%", "max"]].style.format(
+                    {"mean": "{:.0f}", "50%": "{:.0f}", "max": "{:.0f}"}
+                ),
                 hide_index=True,
                 use_container_width=True,
             )
