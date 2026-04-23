@@ -143,6 +143,39 @@ def build_prediction_scatter(
     return fig
 
 
+def build_pca_explained_variance_chart(explained_variance: np.ndarray | pd.Series) -> go.Figure:
+    df_var = pd.DataFrame(
+        {
+            "Anzahl Komponenten": np.arange(1, len(explained_variance) + 1),
+            "Kumulierte erklärte Varianz": explained_variance,
+        }
+    )
+    plot_color = px.colors.qualitative.Vivid[0]
+    fig = px.line(
+        df_var,
+        x="Anzahl Komponenten",
+        y="Kumulierte erklärte Varianz",
+        labels={
+            "Kumulierte erklärte Varianz": "Kumulierte erklärte Varianz",
+            "Anzahl Komponenten": "Anzahl der Komponenten",
+        },
+    )
+    fig.update_traces(
+        line_color=plot_color,
+        marker_color=plot_color,
+        mode="lines",
+        line_width=3,
+        marker_size=8,
+    )
+    fig.update_layout(
+        showlegend=False,
+        xaxis={"title_font": {"size": 16}, "tickfont": {"size": 14}, "showgrid": True},
+        yaxis={"title_font": {"size": 16}, "tickfont": {"size": 14}, "showgrid": True},
+        hovermode="x unified",
+    )
+    return fig
+
+
 def build_qq_plot(
     y_true: pd.Series | list[float],
     y_pred: pd.Series | np.ndarray | list[float],

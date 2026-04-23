@@ -15,6 +15,12 @@ from autoscout24.app.modeling_state import (
     config_exists,
     initialize_modeling_state,
 )
+from autoscout24.data.io import load_modeling_dataset
+from autoscout24.features.engineering import (
+    build_vehicle_input_frame,
+    get_engineered_feature_names,
+    required_prediction_inputs,
+)
 from autoscout24.modeling.config import (
     DEFAULT_FEATURE_SELECTION,
     FeatureSelectionConfig,
@@ -22,6 +28,7 @@ from autoscout24.modeling.config import (
 )
 from autoscout24.modeling.evaluation import (
     SEGMENT_LABELS,
+    build_pca_explained_variance_chart,
     build_prediction_scatter,
     build_qq_plot,
     build_segment_error_chart,
@@ -30,19 +37,17 @@ from autoscout24.modeling.evaluation import (
 from autoscout24.modeling.registry import persist_run
 from autoscout24.modeling.service import (
     MODEL_LABELS,
+    calculate_pca_explained_variance,
     predict_with_pipeline,
     prepare_training_data,
     train_model_run,
 )
 from autoscout24.modeling.tuning import compare_model_candidates
-from ml_functions import (
-    car_data,
-    feature_engineering,
-    input_features,
-    pca_explained_variance,
-    plot_explained_var,
-    read_preprocess_df,
-)
+
+
+@st.cache_data
+def _load_modeling_base_df():
+    return load_modeling_dataset()
 
 
 def _run_training(
@@ -158,162 +163,36 @@ def _save_current_pipeline(
     st.success("Pipeline gespeichert und Artefakte persistiert.")
 
 
-initialize_modeling_state()
-
-st.title(":material/model_training: Machine Learning zur Preisvorhersage")
-st.divider()
-
-base_df = read_preprocess_df()
-engineered_df, engineered_feature_options = feature_engineering(base_df)
-feature_options = [feature for feature in base_df.columns.tolist() if feature != "price"]
-
-st.subheader("🛠️ Feature Auswahl")
-feature_cols = st.columns([1.5, 1.5, 2])
-with feature_cols[0]:
-    base_features = st.multiselect(
-        "Features",
-        options=feature_options,
-        default=DEFAULT_FEATURE_SELECTION.base_features,
-    )
-with feature_cols[1]:
-    engineered_features = st.multiselect(
-        "Engineered Features",
-        options=engineered_feature_options,
-        default=DEFAULT_FEATURE_SELECTION.engineered_features,
-    )
-
-feature_config = FeatureSelectionConfig(
-    base_features=base_features,
-    engineered_features=engineered_features,
-)
-if not feature_config.all_features:
-    st.warning("Bitte mindestens ein Feature auswählen.")
-    st.stop()
-
-st.divider()
-st.subheader("⚙️ Modell Auswahl und Preprocessing")
-
-config_cols = st.columns([1.4, 1.4, 1.2, 1.2, 1.4])
-with config_cols[0]:
-    model_selection = st.selectbox(
-        "Wähle ein Regressionsmodell:",
-        ("lr", "rf", "xgb", "cat", "lgb"),
-        format_func=lambda key: MODEL_LABELS[key],
-    )
-with config_cols[1]:
-    if model_selection == "lr":
-        scaler_selection = st.segmented_control(
-            "Skalierer",
-            options=["None", "Standard", "MinMax"],
-            default="Standard",
+def _render_model_comparison(
+    prepared_data,
+    training_config: TrainingConfig,
+) -> None:
+    st.divider()
+    st.subheader("🧪 Modellvergleich")
+    comparison_cols = st.columns([2, 1])
+    with comparison_cols[0]:
+        comparison_models = st.multiselect(
+            "Kandidaten",
+            options=list(MODEL_LABELS),
+            default=list(dict.fromkeys([training_config.model_key, "cat", "lgb"])),
+            format_func=lambda key: MODEL_LABELS[key],
         )
-    else:
-        scaler_selection = "None"
-        st.badge("Skalierung nicht erforderlich", color="green")
-with config_cols[2]:
-    target_transform = st.selectbox(
-        "Target",
-        options=["raw", "log1p"],
-        format_func=lambda key: {"raw": "Preis direkt", "log1p": "log1p(Preis)"}[key],
-    )
-    test_size = st.slider("Anteil Validierungsset", 10, 50, 20, 5) / 100
-with config_cols[3]:
-    cv_folds = st.slider("CV Folds", 3, 5, 3, 1)
-    pca_check = model_selection == "lr" and st.checkbox("PCA aktivieren?", value=False)
-with config_cols[4]:
-    n_components = 10
+    with comparison_cols[1]:
+        max_candidates_per_model = st.slider("Configs pro Modell", 1, 4, 2)
 
-training_config = TrainingConfig(
-    model_key=model_selection,
-    scaler_key=scaler_selection,
-    pca_enabled=pca_check,
-    n_components=n_components,
-    test_size=test_size,
-    target_transform=target_transform,
-    cv_folds=cv_folds,
-)
-prepared_data = prepare_training_data(
-    base_features=feature_config.base_features,
-    engineered_features=feature_config.engineered_features,
-    model_selection=training_config.model_key,
-    test_size=training_config.test_size,
-)
+    if st.button("Modellvergleich starten"):
+        with st.spinner("Vergleiche Kandidaten per Cross-Validation..."):
+            st.session_state.comparison_results = compare_model_candidates(
+                prepared_data,
+                model_keys=comparison_models,
+                target_transform=training_config.target_transform,
+                cv_folds=training_config.cv_folds,
+                max_candidates_per_model=max_candidates_per_model,
+            )
 
-render_selected_feature_lists(
-    prepared_data.categorical_columns,
-    prepared_data.numeric_columns,
-)
+    if st.session_state.comparison_results.empty:
+        return
 
-explained_variance = pca_explained_variance(
-    prepared_data.x_train,
-    training_config.model_key,
-    training_config.scaler_key,
-    prepared_data.categorical_dummy_columns,
-    prepared_data.numeric_columns,
-    prepared_data.categorical_columns,
-)
-if training_config.pca_enabled and explained_variance is not None:
-    with config_cols[4]:
-        n_opt = int((explained_variance >= 0.95).argmax()) + 1
-        max_components = len(prepared_data.numeric_columns) + len(
-            prepared_data.categorical_dummy_columns
-        ) - 1
-        n_components = st.slider(
-            "Anzahl der PCA-Komponenten",
-            min_value=1,
-            max_value=max_components,
-            value=min(n_opt, max_components),
-        )
-        st.write(f"▶️ Optimale PCA-Komponenten für 95% erklärte Varianz: {n_opt}")
-        st.plotly_chart(plot_explained_var(explained_variance), use_container_width=True)
-    training_config = TrainingConfig(
-        model_key=model_selection,
-        scaler_key=scaler_selection,
-        pca_enabled=pca_check,
-        n_components=n_components,
-        test_size=test_size,
-        target_transform=target_transform,
-        cv_folds=cv_folds,
-    )
-
-render_parameter_summary(training_config)
-
-st.divider()
-st.subheader("🧪 Modellvergleich")
-comparison_cols = st.columns([2, 1])
-with comparison_cols[0]:
-    comparison_models = st.multiselect(
-        "Kandidaten",
-        options=list(MODEL_LABELS),
-        default=list(dict.fromkeys([training_config.model_key, "cat", "lgb"])),
-        format_func=lambda key: MODEL_LABELS[key],
-    )
-with comparison_cols[1]:
-    max_candidates_per_model = st.slider("Configs pro Modell", 1, 4, 2)
-
-current_signature = build_config_signature(feature_config, training_config)
-scenario_exists = config_exists(
-    st.session_state.scenario_log,
-    feature_config,
-    training_config,
-)
-parameters_changed = st.session_state.last_config_signature != current_signature
-if parameters_changed:
-    st.session_state.model_training = False
-    st.session_state.show_scenarios_popover = scenario_exists
-    st.session_state.comparison_results = pd.DataFrame()
-
-if st.button("Modellvergleich starten"):
-    with st.spinner("Vergleiche Kandidaten per Cross-Validation..."):
-        st.session_state.comparison_results = compare_model_candidates(
-            prepared_data,
-            model_keys=comparison_models,
-            target_transform=training_config.target_transform,
-            cv_folds=training_config.cv_folds,
-            max_candidates_per_model=max_candidates_per_model,
-        )
-
-if not st.session_state.comparison_results.empty:
     best_candidate = st.session_state.comparison_results.iloc[0]
     comparison_metrics = st.columns(3)
     with comparison_metrics[0]:
@@ -338,26 +217,103 @@ if not st.session_state.comparison_results.empty:
         hide_index=True,
     )
 
-st.divider()
-st.subheader("📈 Modell trainieren und evaluieren")
-render_training_summary(
-    prepared_data.x_train,
-    prepared_data.x_test,
-    len(feature_config.all_features),
-)
 
-placeholder = st.empty()
-if scenario_exists:
-    placeholder.info("Modellsetup ist bereits im Session-Log vorhanden.")
-if not st.session_state.model_training:
-    placeholder.info("Modell noch nicht trainiert.")
+def _render_residual_analysis() -> None:
+    evaluation_report = st.session_state.evaluation_report
+    diagnostics = evaluation_report.residual_diagnostics
 
-if st.button("Modell trainieren"):
-    with st.spinner("Training läuft... Dies kann einen Moment dauern."):
-        _run_training(prepared_data, feature_config, training_config)
-    placeholder.success("Training abgeschlossen!")
+    with st.popover("Residuen Analyse", use_container_width=True):
+        tab_qq, tab_price, tab_make, tab_offer, tab_age = st.tabs(
+            [
+                "QQ-Plot",
+                "Preisband",
+                "Marke",
+                "Angebotstyp",
+                "Fahrzeugalter",
+            ]
+        )
+        with tab_qq:
+            skew_cols = st.columns(2)
+            with skew_cols[0]:
+                st.metric(
+                    label="Schiefe (Skewness)",
+                    value=f"{diagnostics.skew:.2f}",
+                    delta=f"{diagnostics.delta_skew:.2f} zur Normalform",
+                    delta_color="inverse" if diagnostics.delta_skew < 0.5 else "off",
+                )
+            with skew_cols[1]:
+                st.metric(
+                    label="Spitzigkeit (Kurtosis)",
+                    value=f"{diagnostics.kurtosis:.2f}",
+                    delta=f"{diagnostics.delta_kurtosis:.2f} zur Normalform",
+                    delta_color="inverse" if diagnostics.delta_kurtosis < 0.5 else "off",
+                )
+            st.plotly_chart(
+                build_qq_plot(evaluation_report.y_true, evaluation_report.y_pred),
+                use_container_width=True,
+            )
+        for tab, report_key, top_n in [
+            (tab_price, "price_band", None),
+            (tab_make, "make", 15),
+            (tab_offer, "offerType", None),
+            (tab_age, "car_age_band", None),
+        ]:
+            with tab:
+                segment_df = evaluation_report.segment_reports[report_key]
+                chart_frame = segment_df.head(top_n) if top_n else segment_df
+                st.plotly_chart(
+                    build_segment_error_chart(
+                        chart_frame,
+                        title=f"Fehler nach {SEGMENT_LABELS[report_key]}",
+                    ),
+                    use_container_width=True,
+                )
+                st.dataframe(
+                    segment_df.style.format(
+                        {
+                            "MAE": "{:.0f}",
+                            "Median AE": "{:.0f}",
+                            "Bias": "{:.0f}",
+                            "RMSE": "{:.0f}",
+                        }
+                    ),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
-if st.session_state.model_training:
+
+def _render_training_results(
+    prepared_data,
+    feature_config: FeatureSelectionConfig,
+    training_config: TrainingConfig,
+) -> None:
+    st.divider()
+    st.subheader("📈 Modell trainieren und evaluieren")
+    render_training_summary(
+        prepared_data.x_train,
+        prepared_data.x_test,
+        len(feature_config.all_features),
+    )
+
+    placeholder = st.empty()
+    scenario_exists = config_exists(
+        st.session_state.scenario_log,
+        feature_config,
+        training_config,
+    )
+    if scenario_exists:
+        placeholder.info("Modellsetup ist bereits im Session-Log vorhanden.")
+    if not st.session_state.model_training:
+        placeholder.info("Modell noch nicht trainiert.")
+
+    if st.button("Modell trainieren"):
+        with st.spinner("Training läuft... Dies kann einen Moment dauern."):
+            _run_training(prepared_data, feature_config, training_config)
+        placeholder.success("Training abgeschlossen!")
+
+    if not st.session_state.model_training:
+        return
+
     with st.expander("Pipeline-Struktur", expanded=False):
         components.html(
             estimator_html_repr(st.session_state.pipe),
@@ -383,72 +339,12 @@ if st.session_state.model_training:
                 st.metric("MAE", value=f"{st.session_state.mae:.0f}")
                 st.metric("CV MAE", value=f"{st.session_state.cv_summary.mean_mae:.0f}")
 
-            evaluation_report = st.session_state.evaluation_report
-            diagnostics = evaluation_report.residual_diagnostics
-
-            with st.popover("Residuen Analyse", use_container_width=True):
-                tab_qq, tab_price, tab_make, tab_offer, tab_age = st.tabs(
-                    [
-                        "QQ-Plot",
-                        "Preisband",
-                        "Marke",
-                        "Angebotstyp",
-                        "Fahrzeugalter",
-                    ]
-                )
-                with tab_qq:
-                    skew_cols = st.columns(2)
-                    with skew_cols[0]:
-                        st.metric(
-                            label="Schiefe (Skewness)",
-                            value=f"{diagnostics.skew:.2f}",
-                            delta=f"{diagnostics.delta_skew:.2f} zur Normalform",
-                            delta_color="inverse" if diagnostics.delta_skew < 0.5 else "off",
-                        )
-                    with skew_cols[1]:
-                        st.metric(
-                            label="Spitzigkeit (Kurtosis)",
-                            value=f"{diagnostics.kurtosis:.2f}",
-                            delta=f"{diagnostics.delta_kurtosis:.2f} zur Normalform",
-                            delta_color="inverse" if diagnostics.delta_kurtosis < 0.5 else "off",
-                        )
-                    st.plotly_chart(
-                        build_qq_plot(evaluation_report.y_true, evaluation_report.y_pred),
-                        use_container_width=True,
-                    )
-                for tab, report_key, top_n in [
-                    (tab_price, "price_band", None),
-                    (tab_make, "make", 15),
-                    (tab_offer, "offerType", None),
-                    (tab_age, "car_age_band", None),
-                ]:
-                    with tab:
-                        segment_df = evaluation_report.segment_reports[report_key]
-                        chart_frame = segment_df.head(top_n) if top_n else segment_df
-                        st.plotly_chart(
-                            build_segment_error_chart(
-                                chart_frame,
-                                title=f"Fehler nach {SEGMENT_LABELS[report_key]}",
-                            ),
-                            use_container_width=True,
-                        )
-                        st.dataframe(
-                            segment_df.style.format(
-                                {
-                                    "MAE": "{:.0f}",
-                                    "Median AE": "{:.0f}",
-                                    "Bias": "{:.0f}",
-                                    "RMSE": "{:.0f}",
-                                }
-                            ),
-                            hide_index=True,
-                            use_container_width=True,
-                        )
+            _render_residual_analysis()
 
             st.plotly_chart(
                 build_prediction_scatter(
-                    evaluation_report.y_true,
-                    evaluation_report.y_pred,
+                    st.session_state.evaluation_report.y_true,
+                    st.session_state.evaluation_report.y_pred,
                 ),
                 use_container_width=True,
             )
@@ -505,9 +401,15 @@ if st.session_state.model_training:
                     use_container_width=True,
                 )
 
-st.divider()
 
-if st.session_state.model_training:
+def _render_prediction_section(
+    prepared_data,
+    feature_config: FeatureSelectionConfig,
+) -> None:
+    if not st.session_state.model_training:
+        return
+
+    st.divider()
     st.subheader("💸 Preis vorhersagen")
     st.markdown(
         f"""
@@ -518,27 +420,28 @@ if st.session_state.model_training:
         """
     )
 
-    required_widgets = input_features(st.session_state.features)
+    required_widgets = required_prediction_inputs(st.session_state.features)
     with st.container(border=True, height=620):
         prediction_inputs = render_prediction_inputs(
             prepared_data.engineered_df,
             required_widgets,
             feature_config.all_features,
         )
-        new_car_df = car_data(
-            st.session_state.model_selection,
-            st.session_state.categorical_dummy_cols,
-            st.session_state.X_train,
-            prepared_data.categorical_columns,
-            st.session_state.features,
-            hp=prediction_inputs["hp"],
-            year=prediction_inputs["year"],
-            mileage=prediction_inputs["mileage"],
-            make=prediction_inputs["make"],
-            fuel=prediction_inputs["fuel"],
-            gear=prediction_inputs["gear"],
-            model=prediction_inputs["model"],
-            offerType=prediction_inputs["offerType"],
+        new_car_df = build_vehicle_input_frame(
+            vehicle_inputs={
+                "hp": prediction_inputs["hp"],
+                "year": prediction_inputs["year"],
+                "mileage": prediction_inputs["mileage"],
+                "make": prediction_inputs["make"],
+                "fuel": prediction_inputs["fuel"],
+                "gear": prediction_inputs["gear"],
+                "model": prediction_inputs["model"],
+                "offerType": prediction_inputs["offerType"],
+            },
+            selected_features=st.session_state.features,
+            training_columns=st.session_state.X_train.columns.tolist(),
+            categorical_columns=prepared_data.categorical_columns,
+            model_selection=st.session_state.model_selection,
         )
         car_price = predict_with_pipeline(
             st.session_state.pipe,
@@ -582,9 +485,150 @@ if st.session_state.model_training:
             with st.popover("Gespeicherte Vorhersagen", use_container_width=True):
                 st.dataframe(st.session_state.car_price, use_container_width=True)
 
-st.divider()
-render_download_section(
-    st.session_state.scenario_log,
-    st.session_state.car_price,
-    st.session_state.pipeline_store,
-)
+
+def render_page() -> None:
+    initialize_modeling_state()
+
+    st.title(":material/model_training: Machine Learning zur Preisvorhersage")
+    st.divider()
+
+    base_df = _load_modeling_base_df()
+    feature_options = [feature for feature in base_df.columns.tolist() if feature != "price"]
+    engineered_feature_options = get_engineered_feature_names()
+
+    st.subheader("🛠️ Feature Auswahl")
+    feature_cols = st.columns([1.5, 1.5, 2])
+    with feature_cols[0]:
+        base_features = st.multiselect(
+            "Features",
+            options=feature_options,
+            default=DEFAULT_FEATURE_SELECTION.base_features,
+        )
+    with feature_cols[1]:
+        engineered_features = st.multiselect(
+            "Engineered Features",
+            options=engineered_feature_options,
+            default=DEFAULT_FEATURE_SELECTION.engineered_features,
+        )
+
+    feature_config = FeatureSelectionConfig(
+        base_features=base_features,
+        engineered_features=engineered_features,
+    )
+    if not feature_config.all_features:
+        st.warning("Bitte mindestens ein Feature auswählen.")
+        st.stop()
+
+    st.divider()
+    st.subheader("⚙️ Modell Auswahl und Preprocessing")
+
+    config_cols = st.columns([1.4, 1.4, 1.2, 1.2, 1.4])
+    with config_cols[0]:
+        model_selection = st.selectbox(
+            "Wähle ein Regressionsmodell:",
+            ("lr", "rf", "xgb", "cat", "lgb"),
+            format_func=lambda key: MODEL_LABELS[key],
+        )
+    with config_cols[1]:
+        if model_selection == "lr":
+            scaler_selection = st.segmented_control(
+                "Skalierer",
+                options=["None", "Standard", "MinMax"],
+                default="Standard",
+            )
+        else:
+            scaler_selection = "None"
+            st.badge("Skalierung nicht erforderlich", color="green")
+    with config_cols[2]:
+        target_transform = st.selectbox(
+            "Target",
+            options=["raw", "log1p"],
+            format_func=lambda key: {"raw": "Preis direkt", "log1p": "log1p(Preis)"}[key],
+        )
+        test_size = st.slider("Anteil Validierungsset", 10, 50, 20, 5) / 100
+    with config_cols[3]:
+        cv_folds = st.slider("CV Folds", 3, 5, 3, 1)
+        pca_check = model_selection == "lr" and st.checkbox("PCA aktivieren?", value=False)
+    with config_cols[4]:
+        n_components = 10
+
+    training_config = TrainingConfig(
+        model_key=model_selection,
+        scaler_key=scaler_selection,
+        pca_enabled=pca_check,
+        n_components=n_components,
+        test_size=test_size,
+        target_transform=target_transform,
+        cv_folds=cv_folds,
+    )
+    prepared_data = prepare_training_data(
+        base_features=feature_config.base_features,
+        engineered_features=feature_config.engineered_features,
+        model_selection=training_config.model_key,
+        test_size=training_config.test_size,
+    )
+
+    render_selected_feature_lists(
+        prepared_data.categorical_columns,
+        prepared_data.numeric_columns,
+    )
+
+    explained_variance = calculate_pca_explained_variance(
+        prepared_data.x_train,
+        training_config.model_key,
+        training_config.scaler_key,
+        prepared_data.categorical_dummy_columns,
+        prepared_data.numeric_columns,
+        prepared_data.categorical_columns,
+    )
+    if training_config.pca_enabled and explained_variance is not None:
+        with config_cols[4]:
+            n_opt = int((explained_variance >= 0.95).argmax()) + 1
+            max_components = len(prepared_data.numeric_columns) + len(
+                prepared_data.categorical_dummy_columns
+            ) - 1
+            n_components = st.slider(
+                "Anzahl der PCA-Komponenten",
+                min_value=1,
+                max_value=max_components,
+                value=min(n_opt, max_components),
+            )
+            st.write(f"▶️ Optimale PCA-Komponenten für 95% erklärte Varianz: {n_opt}")
+            st.plotly_chart(
+                build_pca_explained_variance_chart(explained_variance),
+                use_container_width=True,
+            )
+        training_config = TrainingConfig(
+            model_key=model_selection,
+            scaler_key=scaler_selection,
+            pca_enabled=pca_check,
+            n_components=n_components,
+            test_size=test_size,
+            target_transform=target_transform,
+            cv_folds=cv_folds,
+        )
+
+    render_parameter_summary(training_config)
+
+    current_signature = build_config_signature(feature_config, training_config)
+    scenario_exists = config_exists(
+        st.session_state.scenario_log,
+        feature_config,
+        training_config,
+    )
+    parameters_changed = st.session_state.last_config_signature != current_signature
+    if parameters_changed:
+        st.session_state.model_training = False
+        st.session_state.show_scenarios_popover = scenario_exists
+        st.session_state.comparison_results = pd.DataFrame()
+
+    _render_model_comparison(prepared_data, training_config)
+    _render_training_results(prepared_data, feature_config, training_config)
+    _render_prediction_section(prepared_data, feature_config)
+
+    st.divider()
+    render_download_section(
+        st.session_state.scenario_log,
+        st.session_state.car_price,
+        st.session_state.pipeline_store,
+    )
