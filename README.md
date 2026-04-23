@@ -85,7 +85,6 @@ Damit bleiben gespeicherte Trainings-Runs auch nach dem Stoppen des Containers e
 ## Speicherung von Runs
 
 - Lokal speichert die App Runs unter `models/runs/`
-- Dieser Ordner ist in `.gitignore` eingetragen und wird nicht nach GitHub gepusht
 - Im Container ist der Pfad `/app/models/runs`
 - Ohne Docker-Volume bleiben Runs nur im Dateisystem des Containers
 
