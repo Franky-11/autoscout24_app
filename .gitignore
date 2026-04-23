@@ -49,3 +49,6 @@ models/runs/
 *.sav
 *.joblib
 *.pkl
+
+# docs
+docs/refactoring-plan.md
