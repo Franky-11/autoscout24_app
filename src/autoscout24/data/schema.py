@@ -15,7 +15,7 @@ EXPECTED_COLUMNS = (
 )
 
 CATEGORICAL_COLUMNS = ("make", "model", "fuel", "gear", "offerType")
-MODELING_CATEGORICAL_COLUMNS = ("make", "model", "fuel", "gear")
+MODELING_CATEGORICAL_COLUMNS = ("make", "model", "fuel", "gear", "offerType")
 
 
 def validate_vehicle_schema(

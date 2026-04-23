@@ -43,6 +43,7 @@ secrets.yml
 *.db
 *.sqlite3
 catboost_info/
+models/runs/
 
 # Model artifacts
 *.sav

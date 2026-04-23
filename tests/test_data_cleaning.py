@@ -2,14 +2,14 @@ from autoscout24.data.cleaning import get_outlier_counts, prepare_modeling_datas
 from autoscout24.data.io import load_raw_dataset
 
 
-def test_prepare_modeling_dataset_drops_offer_type_and_sets_categories():
+def test_prepare_modeling_dataset_keeps_offer_type_and_sets_categories():
     df = prepare_modeling_dataset(load_raw_dataset())
 
-    assert "offerType" not in df.columns
     assert str(df["make"].dtype) == "category"
     assert str(df["model"].dtype) == "category"
     assert str(df["fuel"].dtype) == "category"
     assert str(df["gear"].dtype) == "category"
+    assert str(df["offerType"].dtype) == "category"
 
 
 def test_remove_outliers_returns_filtered_dataset_and_outlier_counts():

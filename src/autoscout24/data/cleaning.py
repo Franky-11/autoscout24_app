@@ -57,9 +57,6 @@ def prepare_modeling_dataset(df: pd.DataFrame, factor: float = 1.5) -> pd.DataFr
     _, filtered, _ = remove_outliers(cleaned, factor=factor)
     modeling_df = filtered.drop(columns=["price_u_limit", "mileage_u_limit", "hp_u_limit"]).copy()
 
-    if "offerType" in modeling_df.columns:
-        modeling_df = modeling_df.drop(columns=["offerType"])
-
     for column in MODELING_CATEGORICAL_COLUMNS:
         modeling_df[column] = modeling_df[column].astype("category")
 
