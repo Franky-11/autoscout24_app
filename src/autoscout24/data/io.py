@@ -17,8 +17,8 @@ def load_dataset(path: Path = RAW_DATA_PATH) -> pd.DataFrame:
     return drop_missing_and_duplicates(load_raw_dataset(path))
 
 
-def load_modeling_dataset(path: Path = RAW_DATA_PATH, factor: float = 1.5) -> pd.DataFrame:
-    return prepare_modeling_dataset(load_raw_dataset(path), factor=factor)
+def load_modeling_dataset(path: Path = RAW_DATA_PATH) -> pd.DataFrame:
+    return prepare_modeling_dataset(load_raw_dataset(path))
 
 
 def get_image_path() -> Path:

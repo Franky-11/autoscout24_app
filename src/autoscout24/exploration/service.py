@@ -167,7 +167,7 @@ def build_stage_summary(overview: DatasetOverview) -> pd.DataFrame:
             "Änderung %": (1 - len(overview.clean_df) / len(overview.raw_df)) * 100,
         },
         {
-            "Stufe": "Modeling-Dataset",
+            "Stufe": "Nach Plausibilitaetsfilter",
             "Zeilen": len(overview.modeling_df),
             "Entfernte Zeilen": len(overview.raw_df) - len(overview.modeling_df),
             "Änderung %": (1 - len(overview.modeling_df) / len(overview.raw_df)) * 100,

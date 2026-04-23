@@ -1,10 +1,31 @@
+from datetime import datetime
+
 import pandas as pd
 
 from autoscout24.data.schema import MODELING_CATEGORICAL_COLUMNS
 
+MIN_VALID_YEAR = 1950
+MAX_VALID_PRICE = 2_000_000
+MAX_VALID_MILEAGE = 2_000_000
+MAX_VALID_HP = 2_000
+
 
 def drop_missing_and_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop_duplicates().dropna().copy()
+
+
+def apply_plausibility_filters(df: pd.DataFrame) -> pd.DataFrame:
+    max_valid_year = datetime.now().year + 1
+    valid_rows = (
+        df["price"].gt(0)
+        & df["price"].le(MAX_VALID_PRICE)
+        & df["mileage"].ge(0)
+        & df["mileage"].le(MAX_VALID_MILEAGE)
+        & df["hp"].gt(0)
+        & df["hp"].le(MAX_VALID_HP)
+        & df["year"].between(MIN_VALID_YEAR, max_valid_year)
+    )
+    return df.loc[valid_rows].copy()
 
 
 def calculate_iqr_bounds(df: pd.DataFrame, factor: float = 1.5) -> pd.DataFrame:
@@ -52,10 +73,9 @@ def remove_outliers(
     return df_merged, filtered, iqr_bounds
 
 
-def prepare_modeling_dataset(df: pd.DataFrame, factor: float = 1.5) -> pd.DataFrame:
+def prepare_modeling_dataset(df: pd.DataFrame) -> pd.DataFrame:
     cleaned = drop_missing_and_duplicates(df)
-    _, filtered, _ = remove_outliers(cleaned, factor=factor)
-    modeling_df = filtered.drop(columns=["price_u_limit", "mileage_u_limit", "hp_u_limit"]).copy()
+    modeling_df = apply_plausibility_filters(cleaned)
 
     for column in MODELING_CATEGORICAL_COLUMNS:
         modeling_df[column] = modeling_df[column].astype("category")
