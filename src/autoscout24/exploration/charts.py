@@ -205,3 +205,71 @@ def build_relation_chart(
             fig.layout[axis].showgrid = False
     fig.layout.yaxis.title.text = y_title
     return fig
+
+
+def build_distribution_chart(
+    df: pd.DataFrame,
+    column: str,
+    *,
+    nbins: int = 40,
+) -> go.Figure:
+    fig = px.histogram(
+        df,
+        x=column,
+        nbins=nbins,
+        color_discrete_sequence=[px.colors.qualitative.Vivid[0]],
+    )
+    fig.update_layout(
+        showlegend=False,
+        xaxis_title="",
+        yaxis_title="Anzahl",
+        bargap=0.06,
+    )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
+    return fig
+
+
+def build_category_count_chart(
+    df: pd.DataFrame,
+    column: str,
+    *,
+    top_n: int | None = None,
+) -> go.Figure:
+    counts = df[column].value_counts(dropna=False).rename_axis(column).reset_index(name="count")
+    if top_n is not None:
+        counts = counts.head(top_n)
+
+    fig = px.bar(
+        counts,
+        x="count",
+        y=column,
+        orientation="h",
+        color="count",
+        color_continuous_scale="Sunsetdark",
+    )
+    fig.update_layout(
+        showlegend=False,
+        xaxis_title="Anzahl",
+        yaxis_title="",
+        coloraxis_showscale=False,
+    )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False, categoryorder="total ascending")
+    return fig
+
+
+def build_stage_summary_chart(stage_df: pd.DataFrame) -> go.Figure:
+    fig = px.bar(
+        stage_df,
+        x="Stufe",
+        y="Zeilen",
+        color="Stufe",
+        text="Zeilen",
+        color_discrete_sequence=px.colors.qualitative.Vivid,
+    )
+    fig.update_traces(texttemplate="%{text}", textposition="outside")
+    fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Zeilen")
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
+    return fig

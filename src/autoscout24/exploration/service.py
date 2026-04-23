@@ -3,12 +3,14 @@ from dataclasses import dataclass
 import pandas as pd
 
 from autoscout24.data.cleaning import get_outlier_counts, remove_outliers
-from autoscout24.data.io import load_dataset, load_raw_dataset
+from autoscout24.data.io import load_dataset, load_modeling_dataset, load_raw_dataset
 
 
 @dataclass(frozen=True)
 class DatasetOverview:
     raw_df: pd.DataFrame
+    clean_df: pd.DataFrame
+    modeling_df: pd.DataFrame
     null_counts: pd.Series
     total_missing: int
     duplicate_count: int
@@ -28,9 +30,13 @@ def load_clean_exploration_dataset() -> pd.DataFrame:
 
 def load_dataset_overview() -> DatasetOverview:
     raw_df = load_raw_dataset()
+    clean_df = load_dataset()
+    modeling_df = load_modeling_dataset()
     null_counts = raw_df.isnull().sum().sort_values(ascending=False)
     return DatasetOverview(
         raw_df=raw_df,
+        clean_df=clean_df,
+        modeling_df=modeling_df,
         null_counts=null_counts,
         total_missing=int(null_counts.sum()),
         duplicate_count=int(raw_df.duplicated().sum()),
@@ -129,3 +135,47 @@ def filter_relation_dataset(
         return filtered_df, None
 
     return filtered_df[filtered_df["make"].isin(makes)].copy(), "make"
+
+
+def build_missing_summary(raw_df: pd.DataFrame) -> pd.DataFrame:
+    missing_summary = pd.DataFrame(
+        {
+            "Spalte": raw_df.columns,
+            "NaN": raw_df.isnull().sum().values,
+            "NaN Anteil %": (raw_df.isnull().mean() * 100).values,
+            "Eindeutige Werte": raw_df.nunique(dropna=True).values,
+            "Datentyp": raw_df.dtypes.astype(str).values,
+        }
+    )
+    return missing_summary.sort_values(["NaN", "Spalte"], ascending=[False, True]).reset_index(
+        drop=True
+    )
+
+
+def build_stage_summary(overview: DatasetOverview) -> pd.DataFrame:
+    rows = [
+        {
+            "Stufe": "Rohdaten",
+            "Zeilen": len(overview.raw_df),
+            "Entfernte Zeilen": 0,
+            "Änderung %": 0.0,
+        },
+        {
+            "Stufe": "Ohne NaN / Duplikate",
+            "Zeilen": len(overview.clean_df),
+            "Entfernte Zeilen": len(overview.raw_df) - len(overview.clean_df),
+            "Änderung %": (1 - len(overview.clean_df) / len(overview.raw_df)) * 100,
+        },
+        {
+            "Stufe": "Modeling-Dataset",
+            "Zeilen": len(overview.modeling_df),
+            "Entfernte Zeilen": len(overview.raw_df) - len(overview.modeling_df),
+            "Änderung %": (1 - len(overview.modeling_df) / len(overview.raw_df)) * 100,
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def build_numeric_summary(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    summary = df[columns].describe().T.reset_index().rename(columns={"index": "Feature"})
+    return summary
