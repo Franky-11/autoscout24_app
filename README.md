@@ -1,85 +1,112 @@
-# Autoscout24-Web-App
+# AutoScout24 App
 
-Diese Streamlit-Webanwendung bietet eine interaktive Analyse von Fahrzeugdaten 
-aus dem Datensatz:   
-**Germany Cars Dataset from kaggle** 
-* Datensatz-Analyse (NaN, Duplikate, Ausreißer)
-* Dashboard (Interaktive Visualisierungen) 
-* Machine Learning zur Autopreisevorhersage (Feature Auswahl, ML-Pipeline, Modell-Performance)
+Streamlit-App zur Exploration von Fahrzeugdaten und zum Training von Modellen für die
+Preisvorhersage.
 
+## Funktionen
 
----
+- Datensatzansicht mit Rohdaten und aktueller Modeling-Sicht
+- Dashboard für Exploration nach Marke, Kraftstoff, Getriebe und Jahr
+- ML-Workflow mit Setup, Kandidaten-Screening und finalem Training
+- Persistenz gespeicherter Trainings-Runs unter `models/runs/`
+- Vorhersagen und Download von Artefakten aus gespeicherten Runs
 
-##  Features
+## Voraussetzungen
 
-- Datenvisualisierung nach Preis, Marke und Modell
-- Vorhersagemodul mit XGBoost, RandomForest & Linear Regression
-- Residuenanalyse inkl. QQ-Plot, Fehler nach Preissegmenten
-- Downloadbereich für Pipelines & Vorhersagen
-- Docker-ready mit Dockerfile, requirements.txt und .dockerignore
+- Python `3.12`
+- Git
+- optional: Docker
 
-
----
-
-##  Lokale Ausführung
+## Lokale Installation
 
 ```bash
-# Projekt klonen
 git clone https://github.com/Franky-11/autoscout24-app.git
-cd autoscout24-app/src
+cd autoscout24-app
 
-# Virtuelle Umgebung erstellen (optional)
-python -m venv .venv
-source .venv/bin/activate  # macOS/Linux
-.venv\Scripts\activate      # Windows
+python3.12 -m venv .venv
+source .venv/bin/activate
 
-# Abhängigkeiten installieren
-pip install -r ../requirements.txt
-
-# Streamlit starten
-streamlit run home.py
-
-
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
----
 
-##  Docker-Ausführung
+App lokal starten:
 
 ```bash
-# Docker-Image bauen, Dockerfile liegt in src/
-docker build -f src/Dockerfile -t autoscout-app .
-
-# Container starten
-docker run --name autoscout-container -p 8501:8501 autoscout-app
+streamlit run src/home.py
 ```
-Die Anwendung ist dann erreichbar unter:  http://localhost:8501
 
----
+Die App ist dann unter `http://localhost:8501` erreichbar.
 
-🌐 Live-App  
+## Entwicklung
 
-👉 App ist online unter:
-
-https://carscout24-app.streamlit.app
-
-
----
-
-##  Projektstruktur
+Optionale Dev-Tools installieren:
 
 ```bash
-autoscout24/             ← Projekt-Root 
-├── .gitignore           ← Git-Ausschlussregeln
-├── requirements.txt     ← Python-Abhängigkeiten
-├── README.md            ← Dokumentation
-└── src/                 ← Docker-Build-Kontext & App-Logik
-    ├── home.py          ← Entry point Streamlit-App
-    ├── autoscout24.csv  ← Datendatei
-    ├── Dockerfile       ← Container-Definition
-    ├── .dockerignore    ← Docker-Ausschlussregeln (nur für Build aus src/)
-    └── ...              ← Weitere .py Dateien (dashboard.py,ml_modell.py etc...)
+pip install -e ".[dev]"
 ```
 
----
-## 📜 Lizenz
-Code: MIT – siehe LICENSE.
+Nützliche Befehle:
+
+```bash
+PYTHONPATH=src pytest
+PYTHONPATH=src ruff check src tests
+```
+
+## Docker Schnellstart
+
+Image bauen:
+
+```bash
+docker build -f src/Dockerfile -t autoscout24-app .
+```
+
+### Variante 1: Schnell starten ohne persistente Runs
+
+```bash
+docker run --rm -p 8501:8501 autoscout24-app
+```
+
+Die App läuft dann unter `http://localhost:8501`.
+
+### Variante 2: Mit persistenter Run-Ablage
+
+```bash
+mkdir -p models/runs
+
+docker run --rm \
+  -p 8501:8501 \
+  -v "$(pwd)/models/runs:/app/models/runs" \
+  autoscout24-app
+```
+
+Damit bleiben gespeicherte Trainings-Runs auch nach dem Stoppen des Containers erhalten.
+
+## Speicherung von Runs
+
+- Lokal speichert die App Runs unter `models/runs/`
+- Dieser Ordner ist in `.gitignore` eingetragen und wird nicht nach GitHub gepusht
+- Im Container ist der Pfad `/app/models/runs`
+- Ohne Docker-Volume bleiben Runs nur im Dateisystem des Containers
+
+## Projektstruktur
+
+```text
+autoscout24-app/
+├── assets/
+├── data/
+├── models/
+│   └── runs/
+├── src/
+│   ├── Dockerfile
+│   ├── home.py
+│   └── autoscout24/
+├── tests/
+├── pyproject.toml
+├── requirements.txt
+└── README.md
+```
+
+## Lizenz
+
+MIT, siehe `LICENSE`.

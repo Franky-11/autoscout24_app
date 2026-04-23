@@ -19,32 +19,60 @@ TECH_STACK = [
 def render_page() -> None:
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.title("")
-        st.title("AutoScout24 – Data Science Projekt")
+        st.title("AutoScout24 – Preisanalyse und ML-App")
     with col2:
         st.image(get_image_path(), use_container_width=True)
 
     st.divider()
-    st.header("Über das Projekt & die Daten")
-    col_info, _ = st.columns([2, 1])
-    with col_info:
+    st.header("Was die App zeigt")
+    intro_cols = st.columns([1.3, 1.2])
+    with intro_cols[0]:
         st.info(
             """
-            **Interaktive Web-App** für Datenanalyse & Machine Learning
-            Datengrundlage: [**Germany Cars Dataset Kaggle**](https://www.kaggle.com/datasets/ander289386/cars-germany)
-            - **Datensatz & Dashboard:** Überblick über die Daten |
-              interaktive Visualisierungen zur Dateninspektion
-            - **ML-Modul:** Auswahl verschiedener Machine Learning Modelle |
-              Training & Modellperformance | Pipeline-Konfigurationen speichern
-              und vergleichen
-            - **Vorhersagemodul:** Erstellen individueller Preisprognosen
-              für spezifische Fahrzeugkonfigurationen
-            - **Downloadbereich:** Download von gespeicherten ML-Pipelines & Preisvorhersagen
+            Die Anwendung kombiniert Datensatzsicht, interaktive Exploration und
+            ein reproduzierbares Modeling-Setup für Fahrzeugpreise.
+
+            Datengrundlage:
+            [Germany Cars Dataset on Kaggle](https://www.kaggle.com/datasets/ander289386/cars-germany)
+            """
+        )
+    with intro_cols[1]:
+        st.markdown(
+            """
+            **Seiten**
+            - `Datensatz`: Rohdaten und Modeling-Sicht
+            - `Dashboard`: interaktive Exploration nach Marke, Kraftstoff und Getriebe
+            - `Machine Learning`: Setup, Screening, finales Training und Vorhersage
             """
         )
 
     st.divider()
-    st.header("Technologien & Libraries")
+    st.header("Modeling-Workflow")
+    workflow_cols = st.columns(3)
+    workflow_steps = [
+        (
+            "1. Fester Input",
+            "Vor dem Training werden NaN-Zeilen, Duplikate und unplausible Werte entfernt. "
+            "Es gibt keinen interaktiven Outlier-Filter auf `price`.",
+        ),
+        (
+            "2. Kandidaten Vergleichen",
+            "Im Screening werden mehrere Modellkandidaten per Cross-Validation verglichen. "
+            "Ein Kandidat kann explizit ins finale Training übernommen werden.",
+        ),
+        (
+            "3. Run Persistieren",
+            "Final trainierte Runs lassen sich speichern, später wieder laden und für "
+            "Vorhersagen oder Downloads weiterverwenden.",
+        ),
+    ]
+    for column, (title, body) in zip(workflow_cols, workflow_steps, strict=False):
+        with column:
+            st.markdown(f"**{title}**")
+            st.write(body)
+
+    st.divider()
+    st.header("Technologien")
     tech_cols = st.columns(3)
     for index, tech in enumerate(TECH_STACK):
         with tech_cols[index % 3]:

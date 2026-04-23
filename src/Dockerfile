@@ -1,25 +1,20 @@
-# Basierend auf dem offiziellen Python-Image
-FROM python:3.13
+FROM python:3.12-slim
 
-# Arbeitsverzeichnis im Container setzen
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
-
 
 COPY requirements.txt .
 
-# Abhängigkeiten installieren
 RUN pip install --no-cache-dir -r requirements.txt
 
-# kopiert Inhalte aus src/ nach /app
-# holt die Theme-Konfig aus dem Projekt-Root
 COPY src/ /app/
 COPY data/ /app/data/
 COPY assets/ /app/assets/
 COPY .streamlit/ /app/.streamlit/
 
-# Den Port freigeben
+RUN mkdir -p /app/models/runs
 
 EXPOSE 8501
 
-# Starte die Streamlit App direkt mit dem Python-Interpreter
 CMD ["streamlit", "run", "home.py", "--server.port=8501", "--server.address=0.0.0.0"]
