@@ -1,3 +1,6 @@
+import ast
+import json
+
 import pandas as pd
 import streamlit as st
 
@@ -63,6 +66,7 @@ def initialize_modeling_state() -> None:
         "evaluation_report": None,
         "persisted_runs_loaded": False,
         "comparison_results": pd.DataFrame(),
+        "comparison_context_signature": None,
         "setup_model_key": "lr",
         "setup_scaler_key": "Standard",
         "setup_target_transform": "raw",
@@ -70,9 +74,7 @@ def initialize_modeling_state() -> None:
         "setup_cv_folds": 3,
         "setup_pca_enabled": False,
         "setup_n_components": 10,
-        "setup_model_params": None,
-        "setup_candidate_label": None,
-        "setup_candidate_signature": None,
+        "active_screening_candidate": None,
         "pending_screening_candidate": None,
     }
     for key, value in defaults.items():
@@ -94,6 +96,7 @@ def initialize_modeling_state() -> None:
 def build_config_signature(
     feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
+    model_params: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "Features": sorted(feature_config.all_features),
@@ -104,6 +107,7 @@ def build_config_signature(
         "PCA Components": training_config.effective_pca_components,
         "Test Size": training_config.test_size,
         "CV Folds": training_config.cv_folds,
+        "Model Parameters": _serialize_model_params(model_params),
     }
 
 
@@ -111,8 +115,9 @@ def config_exists(
     scenario_log: pd.DataFrame,
     feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
+    model_params: dict[str, object] | None = None,
 ) -> bool:
-    current_config = build_config_signature(feature_config, training_config)
+    current_config = build_config_signature(feature_config, training_config, model_params)
 
     for _, row in scenario_log.iterrows():
         row_config = {
@@ -124,6 +129,7 @@ def config_exists(
             "PCA Components": row["PCA Components"],
             "Test Size": row["Test Size"],
             "CV Folds": row["CV Folds"],
+            "Model Parameters": _serialize_model_params(row["Model Parameters"]),
         }
         if current_config == row_config:
             return True
@@ -202,7 +208,7 @@ def build_scenario_log_row(
         ),
         "CV Folds": training_config.get("cv_folds", 3),
         "Test Size": training_config.get("test_size", float("nan")),
-        "Model Parameters": str(metadata.get("model_parameters", {})),
+        "Model Parameters": str(metadata.get("model_parameters")),
         "Train Time (s)": metadata.get("train_time", float("nan")),
         "R2 Score": holdout_metrics.get("r2", float("nan")),
         "RMSE": holdout_metrics.get("rmse", float("nan")),
@@ -228,21 +234,16 @@ def _next_pipe_id(scenario_log: pd.DataFrame) -> int:
 
 
 def apply_screening_candidate(candidate: dict[str, object]) -> None:
-    st.session_state.setup_model_key = candidate["Model Key"]
-    st.session_state.setup_scaler_key = candidate["Scaler"]
-    st.session_state.setup_pca_enabled = bool(candidate["PCA"])
-    st.session_state.setup_n_components = (
-        int(candidate["PCA Components"]) if candidate["PCA Components"] != "N/A" else 10
-    )
-    st.session_state.setup_model_params = dict(candidate["Parameters Raw"])
-    st.session_state.setup_candidate_label = candidate["Candidate Label"]
-    st.session_state.setup_candidate_signature = {
+    st.session_state.active_screening_candidate = {
+        "candidate_label": candidate["Candidate Label"],
         "model_key": candidate["Model Key"],
-        "scaler_key": candidate["Scaler"],
+        "model_label": candidate["Model"],
+        "scaler_key": str(candidate["Scaler"]),
         "pca_enabled": bool(candidate["PCA"]),
         "n_components": (
             int(candidate["PCA Components"]) if candidate["PCA Components"] != "N/A" else 10
         ),
+        "model_params": dict(candidate["Parameters Raw"]),
     }
     st.session_state.pending_screening_candidate = None
 
@@ -261,25 +262,28 @@ def consume_pending_screening_candidate() -> bool:
 
 
 def clear_screening_candidate() -> None:
-    st.session_state.setup_model_params = None
-    st.session_state.setup_candidate_label = None
-    st.session_state.setup_candidate_signature = None
+    st.session_state.active_screening_candidate = None
     st.session_state.pending_screening_candidate = None
 
 
-def screening_candidate_still_matches(
-    *,
-    model_key: str,
-    scaler_key: str,
-    pca_enabled: bool,
-    n_components: int,
-) -> bool:
-    signature = st.session_state.setup_candidate_signature
-    if not signature:
-        return False
-    return signature == {
-        "model_key": model_key,
-        "scaler_key": scaler_key,
-        "pca_enabled": pca_enabled,
-        "n_components": n_components,
-    }
+def _serialize_model_params(model_params: object) -> str:
+    parsed_params = model_params
+    if isinstance(model_params, str):
+        try:
+            parsed_params = ast.literal_eval(model_params)
+        except (SyntaxError, ValueError):
+            parsed_params = model_params
+
+    normalized_params = _normalize_model_params(parsed_params)
+    return json.dumps(normalized_params, sort_keys=True, default=str)
+
+
+def _normalize_model_params(model_params: object) -> object:
+    if isinstance(model_params, dict):
+        return {
+            str(key): _normalize_model_params(value)
+            for key, value in sorted(model_params.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(model_params, list | tuple):
+        return [_normalize_model_params(value) for value in model_params]
+    return model_params

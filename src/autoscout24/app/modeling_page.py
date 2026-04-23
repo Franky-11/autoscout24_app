@@ -17,7 +17,6 @@ from autoscout24.app.modeling_state import (
     consume_pending_screening_candidate,
     initialize_modeling_state,
     queue_screening_candidate,
-    screening_candidate_still_matches,
 )
 from autoscout24.data.io import load_modeling_dataset
 from autoscout24.features.engineering import (
@@ -58,6 +57,7 @@ def _run_training(
     prepared_data,
     feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
+    model_params: dict[str, object] | None,
 ) -> None:
     run_result = train_model_run(
         prepared_data=prepared_data,
@@ -67,7 +67,7 @@ def _run_training(
         n_components=training_config.n_components,
         target_transform=training_config.target_transform,
         cv_folds=training_config.cv_folds,
-        model_params=st.session_state.setup_model_params,
+        model_params=model_params,
     )
 
     st.session_state.model_training = True
@@ -97,6 +97,7 @@ def _run_training(
     st.session_state.last_config_signature = build_config_signature(
         feature_config,
         training_config,
+        model_params,
     )
 
 
@@ -104,14 +105,16 @@ def _save_current_pipeline(
     prepared_data,
     feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
+    model_params: dict[str, object] | None,
 ) -> None:
     new_scenario_id = len(st.session_state.scenario_log) + 1
-    model_params = st.session_state.model_obj.get_params()
-    relevant_params = {
+    fitted_model_params = st.session_state.model_obj.get_params()
+    relevant_fitted_params = {
         key: value
-        for key, value in model_params.items()
+        for key, value in fitted_model_params.items()
         if not key.startswith(("regressor__", "alpha", "random_state", "n_jobs"))
     }
+    configured_model_params = dict(model_params) if model_params is not None else None
     best_baseline_rmse = min(baseline.rmse for baseline in st.session_state.baselines)
     metadata = {
         "feature_config": feature_config,
@@ -123,7 +126,8 @@ def _save_current_pipeline(
         },
         "cross_validation": st.session_state.cv_summary,
         "baselines": st.session_state.baselines,
-        "model_parameters": relevant_params,
+        "model_parameters": configured_model_params,
+        "fitted_model_parameters": relevant_fitted_params,
         "train_time": st.session_state.train_time,
         "selected_features": feature_config.all_features,
         "feature_columns": prepared_data.feature_frame.columns.tolist(),
@@ -149,7 +153,7 @@ def _save_current_pipeline(
         "PCA Components": training_config.effective_pca_components,
         "CV Folds": training_config.cv_folds,
         "Test Size": training_config.test_size,
-        "Model Parameters": str(relevant_params),
+        "Model Parameters": str(configured_model_params),
         "Train Time (s)": st.session_state.train_time,
         "R2 Score": st.session_state.r2,
         "RMSE": st.session_state.rmse,
@@ -170,6 +174,7 @@ def _save_current_pipeline(
 
 def _render_model_comparison(
     prepared_data,
+    feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
 ) -> None:
     st.subheader("🧪 Kandidaten-Screening")
@@ -196,6 +201,10 @@ def _render_model_comparison(
                 target_transform=training_config.target_transform,
                 cv_folds=training_config.cv_folds,
                 max_candidates_per_model=max_candidates_per_model,
+            )
+            st.session_state.comparison_context_signature = _build_screening_context_signature(
+                feature_config,
+                training_config,
             )
 
     if st.session_state.comparison_results.empty:
@@ -306,6 +315,8 @@ def _render_training_tab(
     prepared_data,
     feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
+    model_params: dict[str, object] | None,
+    active_candidate: dict[str, object] | None,
 ) -> None:
     st.subheader("📈 Finales Training")
     st.info(
@@ -321,19 +332,20 @@ def _render_training_tab(
         st.session_state.scenario_log,
         feature_config,
         training_config,
+        model_params,
     )
     if scenario_exists:
         st.info("Dieses Modellsetup ist bereits im Session-Log vorhanden.")
     if not st.session_state.model_training:
         st.info("Nach Konfigurationsänderungen ist noch kein Training für dieses Setup gelaufen.")
 
-    if st.session_state.setup_candidate_label:
-        st.caption(f"Aktiver Screening-Kandidat: {st.session_state.setup_candidate_label}")
-        st.code(str(st.session_state.setup_model_params), language="python")
+    if active_candidate:
+        st.caption(f"Aktiver Screening-Kandidat: {active_candidate['candidate_label']}")
+        st.code(str(model_params), language="python")
 
     if st.button("Modell trainieren", type="primary"):
         with st.spinner("Training läuft... Dies kann einen Moment dauern."):
-            _run_training(prepared_data, feature_config, training_config)
+            _run_training(prepared_data, feature_config, training_config, model_params)
         st.success("Training abgeschlossen.")
 
     if not st.session_state.model_training:
@@ -355,7 +367,7 @@ def _render_training_tab(
     action_cols = st.columns([1.2, 1.2, 3])
     with action_cols[0]:
         if st.button("Training speichern"):
-            _save_current_pipeline(prepared_data, feature_config, training_config)
+            _save_current_pipeline(prepared_data, feature_config, training_config, model_params)
     with action_cols[1]:
         if st.session_state.show_scenarios_popover:
             st.success("Run ist im Session-Log sichtbar.")
@@ -534,10 +546,20 @@ def _render_artifacts_tab() -> None:
     )
 
 
+def _build_screening_context_signature(
+    feature_config: FeatureSelectionConfig,
+    training_config: TrainingConfig,
+) -> dict[str, object]:
+    return {
+        "Features": sorted(feature_config.all_features),
+        "Target": training_config.target_transform,
+        "CV Folds": training_config.cv_folds,
+    }
+
+
 def render_page() -> None:
     initialize_modeling_state()
-    if consume_pending_screening_candidate():
-        st.rerun()
+    consume_pending_screening_candidate()
 
     st.title(":material/model_training: Machine Learning zur Preisvorhersage")
     st.divider()
@@ -562,13 +584,15 @@ def render_page() -> None:
 
     with page_tabs[0]:
         st.subheader("Setup")
-        candidate_locked = st.session_state.setup_candidate_label is not None
+        active_candidate = st.session_state.active_screening_candidate
+        candidate_locked = active_candidate is not None
         if candidate_locked:
             info_cols = st.columns([3, 1])
             with info_cols[0]:
                 st.info(
                     "Ein Kandidat aus dem Screening ist aktiv. "
-                    "Modell, Skalierer und PCA sind aus dem Screening übernommen."
+                    "Das finale Training verwendet jetzt exakt diesen Kandidaten. "
+                    "Manuelles Modell-Setup ist solange ausgeblendet."
                 )
             with info_cols[1]:
                 if st.button("Kandidat lösen"):
@@ -599,21 +623,31 @@ def render_page() -> None:
 
         config_cols = st.columns([1.4, 1.4, 1.2, 1.2, 1.4])
         with config_cols[0]:
-            model_selection = st.selectbox(
-                "Regressionsmodell",
-                ("lr", "rf", "xgb", "cat", "lgb"),
-                format_func=lambda key: MODEL_LABELS[key],
-                key="setup_model_key",
-                disabled=candidate_locked,
-            )
+            if candidate_locked:
+                model_selection = str(active_candidate["model_key"])
+                st.markdown("**Regressionsmodell**")
+                st.info(active_candidate["model_label"])
+            else:
+                model_selection = st.selectbox(
+                    "Regressionsmodell",
+                    ("lr", "rf", "xgb", "cat", "lgb"),
+                    format_func=lambda key: MODEL_LABELS[key],
+                    key="setup_model_key",
+                )
         with config_cols[1]:
-            if model_selection == "lr":
+            if candidate_locked:
+                scaler_selection = str(active_candidate["scaler_key"])
+                st.markdown("**Skalierer**")
+                if scaler_selection == "None":
+                    st.badge("Keine Skalierung", color="green")
+                else:
+                    st.info(scaler_selection)
+            elif model_selection == "lr":
                 scaler_selection = st.segmented_control(
                     "Skalierer",
                     options=["None", "Standard", "MinMax"],
                     default=st.session_state.setup_scaler_key,
                     key="setup_scaler_key",
-                    disabled=candidate_locked,
                 )
             else:
                 scaler_selection = "None"
@@ -642,14 +676,25 @@ def render_page() -> None:
                 1,
                 key="setup_cv_folds",
             )
-            pca_check = model_selection == "lr" and st.checkbox(
-                "PCA aktivieren?",
-                value=st.session_state.setup_pca_enabled,
-                key="setup_pca_enabled",
-                disabled=candidate_locked,
-            )
+            if candidate_locked:
+                pca_check = bool(active_candidate["pca_enabled"])
+                st.markdown("**PCA**")
+                st.info("Aktiv" if pca_check else "Deaktiviert")
+            else:
+                pca_check = model_selection == "lr" and st.checkbox(
+                    "PCA aktivieren?",
+                    value=st.session_state.setup_pca_enabled,
+                    key="setup_pca_enabled",
+                )
         with config_cols[4]:
-            n_components = st.session_state.setup_n_components
+            n_components = (
+                int(active_candidate["n_components"])
+                if candidate_locked
+                else st.session_state.setup_n_components
+            )
+            if candidate_locked:
+                st.markdown("**Kandidat**")
+                st.caption(active_candidate["candidate_label"])
 
         training_config = TrainingConfig(
             model_key=model_selection,
@@ -659,6 +704,11 @@ def render_page() -> None:
             test_size=test_size,
             target_transform=target_transform,
             cv_folds=cv_folds,
+        )
+        model_params = (
+            dict(active_candidate["model_params"])
+            if candidate_locked
+            else None
         )
         prepared_data = prepare_training_data(
             base_features=feature_config.base_features,
@@ -693,14 +743,18 @@ def render_page() -> None:
                 max_components = len(prepared_data.numeric_columns) + len(
                     prepared_data.categorical_dummy_columns
                 ) - 1
-                n_components = st.slider(
-                    "PCA-Komponenten",
-                    min_value=1,
-                    max_value=max_components,
-                    value=min(n_opt, max_components),
-                    key="setup_n_components",
-                    disabled=candidate_locked,
-                )
+                if candidate_locked:
+                    n_components = min(n_components, max_components)
+                    st.markdown("**PCA-Komponenten**")
+                    st.metric("Aktiv", n_components)
+                else:
+                    n_components = st.slider(
+                        "PCA-Komponenten",
+                        min_value=1,
+                        max_value=max_components,
+                        value=min(n_opt, max_components),
+                        key="setup_n_components",
+                    )
                 st.caption(f"95% erklärte Varianz bei ca. {n_opt} Komponenten.")
                 st.plotly_chart(
                     build_pca_explained_variance_chart(explained_variance),
@@ -717,33 +771,38 @@ def render_page() -> None:
             )
 
         render_parameter_summary(training_config)
-        if st.session_state.setup_candidate_label:
-            st.caption(f"Setup aus Screening übernommen: {st.session_state.setup_candidate_label}")
+        if candidate_locked:
+            st.caption(f"Setup aus Screening übernommen: {active_candidate['candidate_label']}")
+            st.code(str(model_params), language="python")
 
-    current_signature = build_config_signature(feature_config, training_config)
+    current_signature = build_config_signature(feature_config, training_config, model_params)
     scenario_exists = config_exists(
         st.session_state.scenario_log,
         feature_config,
         training_config,
+        model_params,
     )
     parameters_changed = st.session_state.last_config_signature != current_signature
     if parameters_changed:
         st.session_state.model_training = False
         st.session_state.show_scenarios_popover = scenario_exists
+    comparison_context_signature = _build_screening_context_signature(
+        feature_config,
+        training_config,
+    )
+    if st.session_state.comparison_context_signature != comparison_context_signature:
         st.session_state.comparison_results = pd.DataFrame()
 
-    if not screening_candidate_still_matches(
-        model_key=training_config.model_key,
-        scaler_key=training_config.scaler_key,
-        pca_enabled=training_config.pca_enabled,
-        n_components=training_config.n_components,
-    ):
-        clear_screening_candidate()
-
     with page_tabs[1]:
-        _render_model_comparison(prepared_data, training_config)
+        _render_model_comparison(prepared_data, feature_config, training_config)
     with page_tabs[2]:
-        _render_training_tab(prepared_data, feature_config, training_config)
+        _render_training_tab(
+            prepared_data,
+            feature_config,
+            training_config,
+            model_params,
+            active_candidate,
+        )
     with page_tabs[3]:
         _render_diagnostics_tab(prepared_data, feature_config, training_config)
     with page_tabs[4]:
