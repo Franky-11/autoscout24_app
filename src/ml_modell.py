@@ -15,7 +15,18 @@ from autoscout24.app.modeling_state import (
     config_exists,
     initialize_modeling_state,
 )
-from autoscout24.modeling.config import DEFAULT_FEATURE_SELECTION, FeatureSelectionConfig, TrainingConfig
+from autoscout24.modeling.config import (
+    DEFAULT_FEATURE_SELECTION,
+    FeatureSelectionConfig,
+    TrainingConfig,
+)
+from autoscout24.modeling.evaluation import (
+    SEGMENT_LABELS,
+    build_prediction_scatter,
+    build_qq_plot,
+    build_segment_error_chart,
+    calculate_feature_importance,
+)
 from autoscout24.modeling.registry import persist_run
 from autoscout24.modeling.service import (
     MODEL_LABELS,
@@ -23,17 +34,13 @@ from autoscout24.modeling.service import (
     prepare_training_data,
     train_model_run,
 )
+from autoscout24.modeling.tuning import compare_model_candidates
 from ml_functions import (
     car_data,
-    check_residuals,
-    error_price_segments,
     feature_engineering,
-    feature_importance,
     input_features,
-    plot_explained_var,
-    plot_pred_vs_true,
     pca_explained_variance,
-    qq_plot,
+    plot_explained_var,
     read_preprocess_df,
 )
 
@@ -64,6 +71,7 @@ def _run_training(
     st.session_state.mae = run_result.mae
     st.session_state.cv_summary = run_result.cv_summary
     st.session_state.baselines = run_result.baselines
+    st.session_state.evaluation_report = run_result.evaluation_report
     st.session_state.pipe = run_result.pipeline
     st.session_state.model_obj = run_result.model
     st.session_state.model_selection = training_config.model_key
@@ -106,7 +114,12 @@ def _save_current_pipeline(
         "cross_validation": st.session_state.cv_summary,
         "baselines": st.session_state.baselines,
         "model_parameters": relevant_params,
+        "train_time": st.session_state.train_time,
+        "selected_features": feature_config.all_features,
         "feature_columns": prepared_data.feature_frame.columns.tolist(),
+        "categorical_columns": prepared_data.categorical_columns,
+        "numeric_columns": prepared_data.numeric_columns,
+        "evaluation_report": st.session_state.evaluation_report.to_dict(),
     }
     persisted_run = persist_run(
         pipeline=st.session_state.pipe,
@@ -265,6 +278,19 @@ if training_config.pca_enabled and explained_variance is not None:
 
 render_parameter_summary(training_config)
 
+st.divider()
+st.subheader("🧪 Modellvergleich")
+comparison_cols = st.columns([2, 1])
+with comparison_cols[0]:
+    comparison_models = st.multiselect(
+        "Kandidaten",
+        options=list(MODEL_LABELS),
+        default=list(dict.fromkeys([training_config.model_key, "cat", "lgb"])),
+        format_func=lambda key: MODEL_LABELS[key],
+    )
+with comparison_cols[1]:
+    max_candidates_per_model = st.slider("Configs pro Modell", 1, 4, 2)
+
 current_signature = build_config_signature(feature_config, training_config)
 scenario_exists = config_exists(
     st.session_state.scenario_log,
@@ -275,6 +301,42 @@ parameters_changed = st.session_state.last_config_signature != current_signature
 if parameters_changed:
     st.session_state.model_training = False
     st.session_state.show_scenarios_popover = scenario_exists
+    st.session_state.comparison_results = pd.DataFrame()
+
+if st.button("Modellvergleich starten"):
+    with st.spinner("Vergleiche Kandidaten per Cross-Validation..."):
+        st.session_state.comparison_results = compare_model_candidates(
+            prepared_data,
+            model_keys=comparison_models,
+            target_transform=training_config.target_transform,
+            cv_folds=training_config.cv_folds,
+            max_candidates_per_model=max_candidates_per_model,
+        )
+
+if not st.session_state.comparison_results.empty:
+    best_candidate = st.session_state.comparison_results.iloc[0]
+    comparison_metrics = st.columns(3)
+    with comparison_metrics[0]:
+        st.metric("Bestes Modell", best_candidate["Model"])
+    with comparison_metrics[1]:
+        st.metric("Beste CV RMSE", f"{best_candidate['CV RMSE']:.0f}")
+    with comparison_metrics[2]:
+        st.metric("Beste CV MAE", f"{best_candidate['CV MAE']:.0f}")
+
+    st.dataframe(
+        st.session_state.comparison_results.style.format(
+            {
+                "CV RMSE": "{:.0f}",
+                "CV RMSE Std": "{:.0f}",
+                "CV MAE": "{:.0f}",
+                "CV MAE Std": "{:.0f}",
+                "CV R2": "{:.3f}",
+                "CV R2 Std": "{:.3f}",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.divider()
 st.subheader("📈 Modell trainieren und evaluieren")
@@ -321,45 +383,84 @@ if st.session_state.model_training:
                 st.metric("MAE", value=f"{st.session_state.mae:.0f}")
                 st.metric("CV MAE", value=f"{st.session_state.cv_summary.mean_mae:.0f}")
 
-            qq = qq_plot(st.session_state.y_test, st.session_state.y_pred)
-            res_skew, res_kurt, delta_skew, delta_kurt = check_residuals(
-                st.session_state.y_test,
-                st.session_state.y_pred,
-            )
+            evaluation_report = st.session_state.evaluation_report
+            diagnostics = evaluation_report.residual_diagnostics
 
             with st.popover("Residuen Analyse", use_container_width=True):
-                tab_qq, tab_error = st.tabs(["QQ-Plot", "Fehler nach Preissegmenten"])
+                tab_qq, tab_price, tab_make, tab_offer, tab_age = st.tabs(
+                    [
+                        "QQ-Plot",
+                        "Preisband",
+                        "Marke",
+                        "Angebotstyp",
+                        "Fahrzeugalter",
+                    ]
+                )
                 with tab_qq:
                     skew_cols = st.columns(2)
                     with skew_cols[0]:
                         st.metric(
                             label="Schiefe (Skewness)",
-                            value=f"{res_skew:.2f}",
-                            delta=f"{delta_skew:.2f} zur Normalform",
-                            delta_color="inverse" if delta_skew < 0.5 else "off",
+                            value=f"{diagnostics.skew:.2f}",
+                            delta=f"{diagnostics.delta_skew:.2f} zur Normalform",
+                            delta_color="inverse" if diagnostics.delta_skew < 0.5 else "off",
                         )
                     with skew_cols[1]:
                         st.metric(
                             label="Spitzigkeit (Kurtosis)",
-                            value=f"{res_kurt:.2f}",
-                            delta=f"{delta_kurt:.2f} zur Normalform",
-                            delta_color="inverse" if delta_kurt < 0.5 else "off",
+                            value=f"{diagnostics.kurtosis:.2f}",
+                            delta=f"{diagnostics.delta_kurtosis:.2f} zur Normalform",
+                            delta_color="inverse" if diagnostics.delta_kurtosis < 0.5 else "off",
                         )
-                    st.plotly_chart(qq, use_container_width=True)
-                with tab_error:
                     st.plotly_chart(
-                        error_price_segments(st.session_state.y_test, st.session_state.y_pred),
+                        build_qq_plot(evaluation_report.y_true, evaluation_report.y_pred),
                         use_container_width=True,
                     )
+                for tab, report_key, top_n in [
+                    (tab_price, "price_band", None),
+                    (tab_make, "make", 15),
+                    (tab_offer, "offerType", None),
+                    (tab_age, "car_age_band", None),
+                ]:
+                    with tab:
+                        segment_df = evaluation_report.segment_reports[report_key]
+                        chart_frame = segment_df.head(top_n) if top_n else segment_df
+                        st.plotly_chart(
+                            build_segment_error_chart(
+                                chart_frame,
+                                title=f"Fehler nach {SEGMENT_LABELS[report_key]}",
+                            ),
+                            use_container_width=True,
+                        )
+                        st.dataframe(
+                            segment_df.style.format(
+                                {
+                                    "MAE": "{:.0f}",
+                                    "Median AE": "{:.0f}",
+                                    "Bias": "{:.0f}",
+                                    "RMSE": "{:.0f}",
+                                }
+                            ),
+                            hide_index=True,
+                            use_container_width=True,
+                        )
 
             st.plotly_chart(
-                plot_pred_vs_true(st.session_state.y_test, st.session_state.y_pred),
+                build_prediction_scatter(
+                    evaluation_report.y_true,
+                    evaluation_report.y_pred,
+                ),
                 use_container_width=True,
             )
 
             baseline_df = pd.DataFrame(
                 [
-                    {"Baseline": baseline.name, "RMSE": baseline.rmse, "R2": baseline.r2, "MAE": baseline.mae}
+                    {
+                        "Baseline": baseline.name,
+                        "RMSE": baseline.rmse,
+                        "R2": baseline.r2,
+                        "MAE": baseline.mae,
+                    }
                     for baseline in st.session_state.baselines
                 ]
             )
@@ -372,7 +473,7 @@ if st.session_state.model_training:
 
         with cols[2]:
             st.markdown("**Feature Importance**")
-            importance_df = feature_importance(
+            importance_df = calculate_feature_importance(
                 st.session_state.pipe,
                 st.session_state.model_selection,
                 st.session_state.X_train,

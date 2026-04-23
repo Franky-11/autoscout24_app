@@ -2,6 +2,9 @@ import pandas as pd
 import streamlit as st
 
 from autoscout24.modeling.config import FeatureSelectionConfig, TrainingConfig
+from autoscout24.modeling.evaluation import EvaluationReport
+from autoscout24.modeling.registry import LoadedPersistedRun, load_persisted_runs
+from autoscout24.modeling.service import MODEL_LABELS
 
 SCENARIO_LOG_COLUMNS = [
     "Pipe ID",
@@ -57,10 +60,24 @@ def initialize_modeling_state() -> None:
         "cv_folds": 3,
         "last_config_signature": None,
         "pipeline_store": {},
+        "evaluation_report": None,
+        "persisted_runs_loaded": False,
+        "comparison_results": pd.DataFrame(),
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+    if not st.session_state.persisted_runs_loaded:
+        (
+            st.session_state.scenario_log,
+            st.session_state.pipeline_store,
+        ) = merge_persisted_runs(
+            st.session_state.scenario_log,
+            st.session_state.pipeline_store,
+            load_persisted_runs(),
+        )
+        st.session_state.persisted_runs_loaded = True
 
 
 def build_config_signature(
@@ -101,3 +118,99 @@ def config_exists(
             return True
 
     return False
+
+
+def merge_persisted_runs(
+    scenario_log: pd.DataFrame,
+    pipeline_store: dict[int, object],
+    persisted_runs: list[LoadedPersistedRun],
+) -> tuple[pd.DataFrame, dict[int, object]]:
+    if not persisted_runs:
+        return scenario_log, pipeline_store
+
+    merged_log = scenario_log.copy()
+    merged_store = dict(pipeline_store)
+    existing_run_ids = set(merged_log["Run ID"].tolist())
+    next_pipe_id = _next_pipe_id(merged_log)
+
+    for persisted_run in persisted_runs:
+        if persisted_run.run_id in existing_run_ids:
+            continue
+
+        merged_log = pd.concat(
+            [
+                merged_log,
+                pd.DataFrame(
+                    [
+                        build_scenario_log_row(
+                            persisted_run,
+                            pipe_id=next_pipe_id,
+                        )
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
+        merged_store[next_pipe_id] = persisted_run.pipeline
+        existing_run_ids.add(persisted_run.run_id)
+        next_pipe_id += 1
+
+    return merged_log, merged_store
+
+
+def build_scenario_log_row(
+    persisted_run: LoadedPersistedRun,
+    pipe_id: int,
+) -> dict[str, object]:
+    metadata = persisted_run.metadata
+    feature_config = metadata.get("feature_config", {})
+    training_config = metadata.get("training_config", {})
+    features = [
+        *feature_config.get("base_features", []),
+        *feature_config.get("engineered_features", []),
+    ]
+    holdout_metrics = metadata.get("holdout_metrics", {})
+    cross_validation = metadata.get("cross_validation", {})
+    baselines = metadata.get("baselines", [])
+    best_baseline_rmse = min((baseline["rmse"] for baseline in baselines), default=float("nan"))
+    model_key = training_config.get("model_key", "")
+
+    return {
+        "Pipe ID": pipe_id,
+        "Run ID": persisted_run.run_id,
+        "Features": features,
+        "Anzahl Features": len(metadata.get("feature_columns", [])),
+        "Model": MODEL_LABELS.get(model_key, model_key),
+        "Scaler": training_config.get("scaler_key", "None"),
+        "Target": training_config.get("target_transform", "raw"),
+        "PCA Active": training_config.get("pca_enabled", False),
+        "PCA Components": (
+            training_config.get("n_components", "N/A")
+            if training_config.get("pca_enabled", False)
+            else "N/A"
+        ),
+        "CV Folds": training_config.get("cv_folds", 3),
+        "Test Size": training_config.get("test_size", float("nan")),
+        "Model Parameters": str(metadata.get("model_parameters", {})),
+        "Train Time (s)": metadata.get("train_time", float("nan")),
+        "R2 Score": holdout_metrics.get("r2", float("nan")),
+        "RMSE": holdout_metrics.get("rmse", float("nan")),
+        "MAE": holdout_metrics.get("mae", float("nan")),
+        "CV RMSE": cross_validation.get("mean_rmse", float("nan")),
+        "CV MAE": cross_validation.get("mean_mae", float("nan")),
+        "Best Baseline RMSE": best_baseline_rmse,
+        "Artifact Path": str(persisted_run.run_dir),
+    }
+
+
+def restore_evaluation_report(metadata: dict[str, object]) -> EvaluationReport | None:
+    evaluation_payload = metadata.get("evaluation_report")
+    if not evaluation_payload:
+        return None
+    return EvaluationReport.from_dict(evaluation_payload)
+
+
+def _next_pipe_id(scenario_log: pd.DataFrame) -> int:
+    if scenario_log.empty:
+        return 1
+    return int(scenario_log["Pipe ID"].max()) + 1

@@ -18,6 +18,16 @@ class PersistedRunArtifacts:
     pipeline_path: Path
 
 
+@dataclass(frozen=True)
+class LoadedPersistedRun:
+    run_id: str
+    run_dir: Path
+    metadata_path: Path
+    pipeline_path: Path
+    metadata: dict[str, object]
+    pipeline: object
+
+
 def persist_run(
     pipeline: object,
     metadata: dict[str, object],
@@ -42,6 +52,36 @@ def persist_run(
         metadata_path=metadata_path,
         pipeline_path=pipeline_path,
     )
+
+
+def load_persisted_runs() -> list[LoadedPersistedRun]:
+    if not RUNS_DIR.exists():
+        return []
+
+    runs: list[LoadedPersistedRun] = []
+    run_directories = sorted(
+        (path for path in RUNS_DIR.iterdir() if path.is_dir()),
+        key=lambda path: path.name,
+    )
+    for run_dir in run_directories:
+        metadata_path = run_dir / "metadata.json"
+        pipeline_path = run_dir / "pipeline.joblib"
+        if not metadata_path.exists() or not pipeline_path.exists():
+            continue
+
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        runs.append(
+            LoadedPersistedRun(
+                run_id=run_dir.name,
+                run_dir=run_dir,
+                metadata_path=metadata_path,
+                pipeline_path=pipeline_path,
+                metadata=metadata,
+                pipeline=joblib.load(pipeline_path),
+            )
+        )
+
+    return runs
 
 
 def _json_default(value: object) -> object:

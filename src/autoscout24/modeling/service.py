@@ -22,6 +22,7 @@ from autoscout24.features.engineering import (
     get_engineered_feature_names,
     split_feature_types,
 )
+from autoscout24.modeling.evaluation import EvaluationReport, build_evaluation_report
 
 MODEL_LABELS = {
     "lr": "Linear Regression",
@@ -89,56 +90,79 @@ class TrainingRunResult:
     train_time: float
     cv_summary: CrossValidationSummary
     baselines: list[BaselineSummary]
+    evaluation_report: EvaluationReport
 
 
 def build_model_and_scaler(
     model_selection: str,
     scaler_selection: str,
     categorical_columns: list[str],
+    model_params: dict[str, object] | None = None,
 ) -> tuple[object, object]:
-    model_dict = {
-        "lr": LinearRegression(),
-        "rf": RandomForestRegressor(
-            n_estimators=300,
-            max_depth=None,
-            min_samples_split=2,
-            max_features="log2",
-            random_state=42,
-        ),
-        "xgb": XGBRegressor(
-            random_state=42,
-            n_jobs=-1,
-            colsample_bytree=0.8,
-            learning_rate=0.1,
-            max_depth=7,
-            n_estimators=300,
-            subsample=1.0,
-        ),
-        "cat": CatBoostRegressor(
-            learning_rate=0.1,
-            depth=7,
-            rsm=0.8,
-            subsample=1.0,
-            random_seed=42,
-            loss_function="RMSE",
-            cat_features=categorical_columns,
-        ),
-        "lgb": LGBMRegressor(
-            random_state=42,
-            n_jobs=-1,
-            colsample_bytree=0.8,
-            learning_rate=0.1,
-            max_depth=7,
-            n_estimators=300,
-            subsample=1.0,
-        ),
-    }
+    params = model_params or {}
+    if model_selection == "lr":
+        model = LinearRegression(**({"fit_intercept": True} | params))
+    elif model_selection == "rf":
+        model = RandomForestRegressor(
+            **{
+                "n_estimators": 300,
+                "max_depth": None,
+                "min_samples_split": 2,
+                "max_features": "log2",
+                "random_state": 42,
+            }
+            | params
+        )
+    elif model_selection == "xgb":
+        model = XGBRegressor(
+            **{
+                "random_state": 42,
+                "n_jobs": -1,
+                "colsample_bytree": 0.8,
+                "learning_rate": 0.1,
+                "max_depth": 7,
+                "n_estimators": 300,
+                "subsample": 1.0,
+            }
+            | params
+        )
+    elif model_selection == "cat":
+        model = CatBoostRegressor(
+            **{
+                "iterations": 300,
+                "learning_rate": 0.1,
+                "depth": 7,
+                "rsm": 0.8,
+                "subsample": 1.0,
+                "random_seed": 42,
+                "loss_function": "RMSE",
+                "verbose": False,
+                "cat_features": categorical_columns,
+            }
+            | params
+        )
+    elif model_selection == "lgb":
+        model = LGBMRegressor(
+            **{
+                "random_state": 42,
+                "n_jobs": -1,
+                "colsample_bytree": 0.8,
+                "learning_rate": 0.1,
+                "max_depth": 7,
+                "n_estimators": 300,
+                "subsample": 1.0,
+            }
+            | params
+        )
+    else:
+        raise KeyError(f"Unknown model selection: {model_selection}")
+
     scaler_dict = {
         "Standard": StandardScaler(),
         "MinMax": MinMaxScaler(),
         "None": "passthrough",
     }
-    return model_dict[model_selection], scaler_dict[scaler_selection]
+    return model, scaler_dict[scaler_selection]
 
 
 def build_pipeline(
@@ -269,6 +293,41 @@ def prepare_training_data(
     )
 
 
+def rebuild_prepared_data_for_model(
+    prepared_data: PreparedTrainingData,
+    model_selection: str,
+) -> PreparedTrainingData:
+    categorical_columns, numeric_columns = split_feature_types(
+        prepared_data.engineered_df,
+        prepared_data.selected_features,
+    )
+    feature_frame, _, _ = build_feature_frame(
+        prepared_data.engineered_df,
+        prepared_data.selected_features,
+        model_selection,
+    )
+    categorical_dummy_columns = [
+        column for column in feature_frame.columns if column not in numeric_columns
+    ]
+
+    return PreparedTrainingData(
+        base_df=prepared_data.base_df,
+        engineered_df=prepared_data.engineered_df,
+        selected_features=prepared_data.selected_features,
+        engineered_feature_options=prepared_data.engineered_feature_options,
+        categorical_columns=categorical_columns,
+        numeric_columns=numeric_columns,
+        feature_frame=feature_frame,
+        categorical_dummy_columns=categorical_dummy_columns,
+        x_train=feature_frame.loc[prepared_data.train_indices],
+        x_test=feature_frame.loc[prepared_data.test_indices],
+        y_train=prepared_data.y_train,
+        y_test=prepared_data.y_test,
+        train_indices=prepared_data.train_indices,
+        test_indices=prepared_data.test_indices,
+    )
+
+
 def train_model_run(
     prepared_data: PreparedTrainingData,
     model_selection: str,
@@ -277,11 +336,13 @@ def train_model_run(
     n_components: int,
     target_transform: str = "raw",
     cv_folds: int = 3,
+    model_params: dict[str, object] | None = None,
 ) -> TrainingRunResult:
     model, scaler = build_model_and_scaler(
         model_selection,
         scaler_selection,
         prepared_data.categorical_columns,
+        model_params=model_params,
     )
     pipeline = build_pipeline(
         pca_check,
@@ -315,8 +376,14 @@ def train_model_run(
         n_components=n_components,
         target_transform=target_transform,
         cv_folds=cv_folds,
+        model_params=model_params,
     )
     baselines = evaluate_holdout_baselines(prepared_data)
+    evaluation_report = build_evaluation_report(
+        prepared_data.y_test,
+        y_pred,
+        prepared_data.engineered_df,
+    )
 
     return TrainingRunResult(
         model=model,
@@ -329,6 +396,7 @@ def train_model_run(
         train_time=train_time,
         cv_summary=cv_summary,
         baselines=baselines,
+        evaluation_report=evaluation_report,
     )
 
 
@@ -340,6 +408,7 @@ def run_cross_validation(
     n_components: int,
     target_transform: str,
     cv_folds: int,
+    model_params: dict[str, object] | None = None,
 ) -> CrossValidationSummary:
     splitter = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
     rmse_scores: list[float] = []
@@ -356,6 +425,7 @@ def run_cross_validation(
             model_selection,
             scaler_selection,
             prepared_data.categorical_columns,
+            model_params=model_params,
         )
         pipeline = build_pipeline(
             pca_check,
