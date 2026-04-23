@@ -167,8 +167,11 @@ def _render_model_comparison(
     prepared_data,
     training_config: TrainingConfig,
 ) -> None:
-    st.divider()
-    st.subheader("🧪 Modellvergleich")
+    st.subheader("🧪 Kandidaten-Screening")
+    st.info(
+        "Das Screening vergleicht mehrere Kandidaten per Cross-Validation. "
+        "Dabei wird noch kein finaler Run für Vorhersage, Persistenz oder Export erzeugt."
+    )
     comparison_cols = st.columns([2, 1])
     with comparison_cols[0]:
         comparison_models = st.multiselect(
@@ -279,6 +282,11 @@ def _render_training_tab(
     feature_config: FeatureSelectionConfig,
     training_config: TrainingConfig,
 ) -> None:
+    st.subheader("📈 Finales Training")
+    st.info(
+        "Hier wird genau ein Setup final auf dem aktuellen Trainingssplit trainiert. "
+        "Erst dieser Schritt erzeugt ein Modell für Diagnose, Vorhersage und Speichern."
+    )
     render_training_summary(
         prepared_data.x_train,
         prepared_data.x_test,
@@ -315,6 +323,14 @@ def _render_training_tab(
         with column:
             st.metric(label, value)
 
+    action_cols = st.columns([1.2, 1.2, 3])
+    with action_cols[0]:
+        if st.button("Training speichern"):
+            _save_current_pipeline(prepared_data, feature_config, training_config)
+    with action_cols[1]:
+        if st.session_state.show_scenarios_popover:
+            st.success("Run ist im Session-Log sichtbar.")
+
     with st.expander("Pipeline-Struktur", expanded=False):
         components.html(
             estimator_html_repr(st.session_state.pipe),
@@ -341,8 +357,6 @@ def _render_diagnostics_tab(
             ),
             use_container_width=True,
         )
-        if st.button("Pipeline speichern"):
-            _save_current_pipeline(prepared_data, feature_config, training_config)
 
     with diag_tabs[1]:
         _render_residual_analysis_tab()
@@ -505,7 +519,14 @@ def render_page() -> None:
     feature_options = [feature for feature in base_df.columns.tolist() if feature != "price"]
     engineered_feature_options = get_engineered_feature_names()
     page_tabs = st.tabs(
-        ["Setup", "Modellvergleich", "Training", "Diagnose", "Vorhersage", "Artefakte"]
+        [
+            "Setup",
+            "Kandidaten-Screening",
+            "Finales Training",
+            "Diagnose",
+            "Vorhersage",
+            "Artefakte",
+        ]
     )
 
     with page_tabs[0]:

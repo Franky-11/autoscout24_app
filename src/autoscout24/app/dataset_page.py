@@ -17,8 +17,25 @@ from autoscout24.exploration.service import (
 
 
 @st.cache_data
-def _load_dataset_overview():
+def _load_dataset_overview_cached(cache_version: int = 2):
     return load_dataset_overview()
+
+
+def _load_dataset_overview():
+    overview = _load_dataset_overview_cached()
+    required_fields = (
+        "raw_df",
+        "clean_df",
+        "modeling_df",
+        "null_counts",
+        "total_missing",
+        "duplicate_count",
+    )
+    if all(hasattr(overview, field) for field in required_fields):
+        return overview
+
+    _load_dataset_overview_cached.clear()
+    return _load_dataset_overview_cached()
 
 
 def render_page() -> None:
