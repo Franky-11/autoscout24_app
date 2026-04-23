@@ -660,17 +660,17 @@ def render_page() -> None:
             )
             test_size = st.slider(
                 "Validierungsanteil",
-                10,
-                50,
-                5,
+                min_value=10,
+                max_value=50,
+                step=5,
                 key="setup_test_size_pct",
             ) / 100
         with config_cols[3]:
             cv_folds = st.slider(
                 "CV Folds",
-                3,
-                5,
-                1,
+                min_value=3,
+                max_value=5,
+                step=1,
                 key="setup_cv_folds",
             )
             if candidate_locked:
