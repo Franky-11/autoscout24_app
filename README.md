@@ -11,6 +11,20 @@ Preisvorhersage.
 - Persistenz gespeicherter Trainings-Runs unter `models/runs/`
 - Vorhersagen und Download von Artefakten aus gespeicherten Runs
 
+## Insights
+
+### Welcome
+
+![Welcome-Seite](assets/images/insight-welcome.png)
+
+### Datensatz
+
+![Datensatz-Seite](assets/images/insight-dataset.png)
+
+### Dashboard
+
+![Dashboard-Seite](assets/images/insight-dashboard.png)
+
 ## Voraussetzungen
 
 - Python `3.12`
