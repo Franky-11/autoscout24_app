@@ -47,9 +47,9 @@ def render_page() -> None:
     st.title(":material/dataset: Datensatz")
     st.divider()
     st.caption(
-        "Die Seite trennt Rohdaten, Datenqualität und die für die Modellierung genutzte Sicht. "
-        "Die Ausreißeranalyse ist hier bewusst explorativ und nicht als stiller "
-        "Trainingsschritt dargestellt."
+        "Die Seite trennt Rohdaten, Datenprüfung und die für die Modellierung genutzte Sicht. "
+        "Die Ausreißeranalyse erklärt den aktuell im Projekt verwendeten IQR-Schritt "
+        "für das Modeling-Dataset."
     )
 
     kpi_cols = st.columns(5)
@@ -65,7 +65,7 @@ def render_page() -> None:
         st.metric("Modeling-Dataset", f"{len(overview.modeling_df):,}")
 
     overview_tab, quality_tab, modeling_tab = st.tabs(
-        ["Overview", "Quality", "Modeling View"]
+        ["Overview", "Datenprüfung", "Modeling View"]
     )
 
     with overview_tab:
@@ -114,10 +114,11 @@ def render_page() -> None:
             st.dataframe(overview.raw_df.head(250), use_container_width=True)
 
     with quality_tab:
-        st.markdown("**Datenqualität und explorative Ausreißeranalyse**")
+        st.markdown("**Datenqualität und aktuelle Ausreißeranalyse**")
         st.info(
-            "Die Ausreißeranalyse dient hier der Dateninspektion. Sie ist keine implizite "
-            "Freigabe dafür, Zielwerte global vor dem Training wegzufiltern."
+            "Aktuell werden für das Modeling-Dataset IQR-Regeln auf `price`, `mileage` "
+            "und `hp` angewendet. Die Ansicht macht diesen Schritt sichtbar, statt ihn "
+            "nur implizit im Preprocessing zu verstecken."
         )
 
         quality_cols = st.columns([1.2, 1.8])
@@ -183,7 +184,8 @@ def render_page() -> None:
             st.markdown("**Aktuelle Modellierungsannahmen**")
             st.markdown(
                 "- Missing Values und Duplikate werden entfernt\n"
-                "- numerische IQR-Regeln werden auf den aktuellen Modeling-Datensatz angewendet\n"
+                "- numerische IQR-Regeln werden aktuell auf "
+                "`price`, `mileage` und `hp` angewendet\n"
                 "- kategoriale Spalten bleiben für die Modellierung erhalten"
             )
 

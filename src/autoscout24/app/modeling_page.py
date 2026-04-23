@@ -646,7 +646,6 @@ def render_page() -> None:
                 scaler_selection = st.segmented_control(
                     "Skalierer",
                     options=["None", "Standard", "MinMax"],
-                    default=st.session_state.setup_scaler_key,
                     key="setup_scaler_key",
                 )
             else:
@@ -663,7 +662,6 @@ def render_page() -> None:
                 "Validierungsanteil",
                 10,
                 50,
-                st.session_state.setup_test_size_pct,
                 5,
                 key="setup_test_size_pct",
             ) / 100
@@ -672,7 +670,6 @@ def render_page() -> None:
                 "CV Folds",
                 3,
                 5,
-                st.session_state.setup_cv_folds,
                 1,
                 key="setup_cv_folds",
             )
@@ -683,7 +680,6 @@ def render_page() -> None:
             else:
                 pca_check = model_selection == "lr" and st.checkbox(
                     "PCA aktivieren?",
-                    value=st.session_state.setup_pca_enabled,
                     key="setup_pca_enabled",
                 )
         with config_cols[4]:
@@ -752,7 +748,6 @@ def render_page() -> None:
                         "PCA-Komponenten",
                         min_value=1,
                         max_value=max_components,
-                        value=min(n_opt, max_components),
                         key="setup_n_components",
                     )
                 st.caption(f"95% erklärte Varianz bei ca. {n_opt} Komponenten.")

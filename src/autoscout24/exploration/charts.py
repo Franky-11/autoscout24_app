@@ -236,7 +236,14 @@ def build_category_count_chart(
     *,
     top_n: int | None = None,
 ) -> go.Figure:
-    counts = df[column].value_counts(dropna=False).rename_axis(column).reset_index(name="count")
+    counts = (
+        df[column]
+        .fillna("Unbekannt")
+        .astype(str)
+        .value_counts(dropna=False)
+        .rename_axis(column)
+        .reset_index(name="count")
+    )
     if top_n is not None:
         counts = counts.head(top_n)
 
