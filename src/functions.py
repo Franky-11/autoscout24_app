@@ -1,11 +1,12 @@
-from pathlib import Path
-
 import pandas as pd
 
 import plotly.express as px
 import plotly.graph_objects as go
 
 import streamlit as st
+
+from autoscout24.data.cleaning import get_outlier_counts, remove_outliers
+from autoscout24.data.io import get_image_path, load_dataset, load_raw_dataset
 
 
 @st.cache_data
@@ -16,16 +17,7 @@ def read_csv():
         Returns:
             pd.DataFrame: Bereinigter Datensatz ohne Duplikate oder fehlende Werte.
     """
-    script_path = Path(__file__).resolve()
-    src_dir = script_path.parent
-    data_file_path = src_dir / "autoscout24.csv"
-
-
-    df = pd.read_csv(data_file_path)
-    df.drop_duplicates(inplace=True)
-    df.dropna(inplace=True)
-
-    return df
+    return load_dataset()
 
 @st.cache_data
 def image_path():
@@ -35,11 +27,7 @@ def image_path():
         Returns:
             pathlib.Path: Pfad zur Bilddatei.
     """
-    script_path = Path(__file__).resolve()
-    src_dir = script_path.parent
-    image_file_path = src_dir / "car_dealer.png"
-
-    return image_file_path
+    return get_image_path()
 
 
 @st.cache_data
@@ -50,14 +38,7 @@ def read_csv_with_nan_duplicates():
         Returns:
             pd.DataFrame: Rohdatensatz mit NaN und Duplikaten.
     """
-
-
-    script_path = Path(__file__).resolve()
-    src_dir = script_path.parent  # == src/
-    data_file_path = src_dir / "autoscout24.csv"
-    df_with_nan = pd.read_csv(data_file_path)
-   # df_with_nan.drop_duplicates(inplace=True)
-    return df_with_nan
+    return load_raw_dataset()
 
 def show_nan(null_counts):
     """
@@ -94,15 +75,7 @@ def get_outliers(df_merged, df_filtered_iqr):
             pd.DataFrame: Übersicht der Ausreißeranzahl pro Jahr.
     """
 
-    outliers = df_merged.groupby("year").size() - df_filtered_iqr.groupby("year").size()
-    outliers_df = outliers.reset_index()
-    outliers_df.columns = ["year", "outliers"]
-    outliers_df = outliers_df.sort_values(by="outliers", ascending=False)
-
-   # outliers_df["year"] = outliers_df["year"].astype(str)
-    outliers_df["year"] = pd.Categorical(outliers_df["year"], categories=outliers_df["year"].tolist(), ordered=True)
-
-    return outliers_df
+    return get_outlier_counts(df_merged, df_filtered_iqr)
 
 
 def df_outliers_removed(df,factor=1.5):
@@ -119,27 +92,7 @@ def df_outliers_removed(df,factor=1.5):
                 - df_filtered_iqr: Datensatz ohne Ausreißer
                 - iqr_bounds: Grenzwerte für Preis und Laufleistung je Baujahr
     """
-    iqr_bounds = df.groupby("year").agg(
-        # Aggregationen für 'price'
-        price_q1=('price', lambda x: x.quantile(0.25)),
-        price_q3=('price', lambda x: x.quantile(0.75)),
-        # Aggregationen für 'mileage'
-        mileage_q1=('mileage', lambda x: x.quantile(0.25)),
-        mileage_q3=('mileage', lambda x: x.quantile(0.75))
-    ).reset_index()
-    iqr_bounds["price_u_limit"] = iqr_bounds["price_q3"] + (iqr_bounds["price_q3"] - iqr_bounds["price_q1"]) * factor
-    iqr_bounds["mileage_u_limit"] = iqr_bounds["mileage_q3"] + (
-                iqr_bounds["mileage_q3"] - iqr_bounds["mileage_q1"]) * factor
-
-    df_merged = pd.merge(df, iqr_bounds[['year', 'price_u_limit', 'mileage_u_limit']], on='year', how='left')
-
-    hp_iqr_bounds = df_merged["hp"].quantile([0.25, 0.75])
-    df_merged["hp_u_limit"] = hp_iqr_bounds[0.75]+(hp_iqr_bounds[0.75]-hp_iqr_bounds[0.25])*factor
-
-    df_filtered_iqr = df_merged[
-        (df_merged['price'] <= df_merged['price_u_limit']) & (df_merged['mileage'] <= df_merged['mileage_u_limit']) & (df_merged['hp'] <= df_merged['hp_u_limit'])]
-
-    return df_merged,df_filtered_iqr,iqr_bounds
+    return remove_outliers(df, factor=factor)
 
 
 
@@ -477,7 +430,6 @@ def plot_rel_price_box(data_frame,color_value,mileage=False,price_mileage=False)
         fig.layout.yaxis.title.text = "Preis"
 
     return fig
-
 
 
 

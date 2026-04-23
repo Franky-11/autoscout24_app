@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # kopiert Inhalte aus src/ nach /app
 # holt die Theme-Konfig aus dem Projekt-Root
 COPY src/ /app/
+COPY data/ /app/data/
+COPY assets/ /app/assets/
 COPY .streamlit/ /app/.streamlit/
 
 # Den Port freigeben

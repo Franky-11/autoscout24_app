@@ -1,7 +1,4 @@
 
-#import os
-from pathlib import Path
-
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -27,6 +24,8 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from catboost import CatBoostRegressor
 
+from autoscout24.data.io import load_modeling_dataset
+
 
 @st.cache_data
 def read_preprocess_df(factor = 1.5):
@@ -40,42 +39,7 @@ def read_preprocess_df(factor = 1.5):
         Returns:
             pd.DataFrame: Vorverarbeiteter und ausreißerbereinigter Datensatz.
     """
-    script_path = Path(__file__).resolve()
-    src_dir = script_path.parent
-    data_file_path = src_dir / "autoscout24.csv"
-
-    df = pd.read_csv(data_file_path)
-    df.drop_duplicates(inplace=True)
-    df.dropna(inplace=True)
-
-    iqr_bounds = df.groupby("year").agg(
-        # Aggregationen für 'price'
-        price_q1=('price', lambda x: x.quantile(0.25)),
-        price_q3=('price', lambda x: x.quantile(0.75)),
-        # Aggregationen für 'mileage'
-        mileage_q1=('mileage', lambda x: x.quantile(0.25)),
-        mileage_q3=('mileage', lambda x: x.quantile(0.75))
-    ).reset_index()
-    iqr_bounds["price_u_limit"] = iqr_bounds["price_q3"] + (iqr_bounds["price_q3"] - iqr_bounds["price_q1"]) * factor
-    iqr_bounds["mileage_u_limit"] = iqr_bounds["mileage_q3"] + (
-                iqr_bounds["mileage_q3"] - iqr_bounds["mileage_q1"]) * factor
-
-    df_merged = pd.merge(df, iqr_bounds[['year', 'price_u_limit', 'mileage_u_limit']], on='year', how='left')
-
-    hp_iqr_bounds = df_merged["hp"].quantile([0.25, 0.75])
-    df_merged["hp_u_limit"] = hp_iqr_bounds[0.75] + (hp_iqr_bounds[0.75] - hp_iqr_bounds[0.25]) * factor
-
-
-    df_filtered_iqr = df_merged[
-        (df_merged['price'] <= df_merged['price_u_limit']) & (df_merged['mileage'] <= df_merged['mileage_u_limit']) & (df_merged['hp'] <= df_merged['hp_u_limit'])]
-
-    df_2 = df_filtered_iqr.drop(['price_u_limit', 'mileage_u_limit', 'offerType','hp_u_limit'], axis=1)
-    df_2['make'] = df_2['make'].astype('category')
-    df_2['fuel'] = df_2['fuel'].astype('category')
-    df_2['gear'] = df_2['gear'].astype('category')
-    df_2['model'] = df_2['model'].astype('category')
-
-    return df_2
+    return load_modeling_dataset(factor=factor)
 
 
 def feature_engineering(df_2):
@@ -632,5 +596,4 @@ def car_data(model_selection,categorical_dummy_cols,X_train,cat_cols,hp=None,yea
             new_car_df[col] = new_car_df[col].astype("category")
 
     return new_car_df
-
 
