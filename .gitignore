@@ -1,54 +1,48 @@
-
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-
-
 *.egg
 *.egg-info/
 dist/
 build/
-*.log
-*.tmp
-*.db
-*.sqlite3
 
-
+# Virtual environments
 .venv/
 venv/
 env/
 
-
+# Notebooks
 *.ipynb
 .ipynb_checkpoints/
 
-# 🖼️ OS-Dateien
+# OS files
 .DS_Store
 Thumbs.db
 
-
+# Editors and local tooling
+.codex
 .vscode/
 .idea/
+*.swp
+*.bak
 
-
+# Local configuration and secrets
 .env
 *.env
 *.secret
 config.yml
 secrets.yml
 
+# Runtime artifacts
+*.log
+*.tmp
+*.db
+*.sqlite3
+catboost_info/
 
-
-
-
-
+# Model artifacts
 *.sav
 *.joblib
 *.pkl
-
-
-*.swp
-*.bak
-
- catboost_info/
